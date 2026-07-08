@@ -304,7 +304,7 @@ class _LoginPageState extends State<LoginPage> {
                       children: [
                         InputField(
                           controller: emailController,
-                          label: 'Correo o usuario',
+                          label: 'Correo',
                           icon: Icons.person_outline,
                           textInputAction: TextInputAction.next,
                           onFieldSubmitted: (_) => _passwordFocus.requestFocus(),
