@@ -2,8 +2,10 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { describe, test, expect, beforeEach, vi } from 'vitest';
+
 import LoginAdmin from '../page/LoginAdmin';
-import * as authService from '../services/authService';
+import { loginAdmin } from '../services/authService';
+import api from '../services/api';
 
 const mockNavigate = vi.fn();
 
@@ -15,16 +17,66 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
-vi.mock('../services/authService', () => ({
-  loginAdmin: vi.fn(),
+vi.mock('../services/api', () => ({
+  default: {
+    post: vi.fn(),
+  },
 }));
 
-describe('Pruebas LoginAdmin - HU-03', () => {
+describe('HU-03 - Login administrador', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
+    mockNavigate.mockClear();
   });
 
-  test('CP-H03-F-01: campo correo vacío muestra error de validación', async () => {
+  test('CP-HU03-F-01: guarda admin y token en sessionStorage después del login exitoso', async () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+
+    const mockResponse = {
+      data: {
+        user: {
+          id: 1,
+          correo: 'admin@saferoute.com',
+          rol: 'admin',
+        },
+        token: 'fake-jwt-token',
+      },
+    };
+
+    api.post.mockResolvedValue(mockResponse);
+
+    const result = await loginAdmin('admin@saferoute.com', 'admin123');
+
+    expect(api.post).toHaveBeenCalledWith('/api/auth/admin-login', {
+      correo: 'admin@saferoute.com',
+      password: 'admin123',
+    });
+
+    expect(setItemSpy).toHaveBeenCalledWith(
+      'admin',
+      JSON.stringify({
+        id: 1,
+        correo: 'admin@saferoute.com',
+        rol: 'admin',
+      })
+    );
+
+    expect(setItemSpy).toHaveBeenCalledWith('token', 'fake-jwt-token');
+
+    expect(sessionStorage.getItem('token')).toBe('fake-jwt-token');
+    expect(sessionStorage.getItem('admin')).toBe(
+      JSON.stringify({
+        id: 1,
+        correo: 'admin@saferoute.com',
+        rol: 'admin',
+      })
+    );
+
+    expect(result).toEqual(mockResponse.data);
+  });
+
+  test('CP-HU03-F-02: campo correo vacío muestra error de validación', async () => {
     render(
       <BrowserRouter>
         <LoginAdmin />
@@ -46,17 +98,19 @@ describe('Pruebas LoginAdmin - HU-03', () => {
       expect(screen.getByText('El correo es obligatorio')).toBeInTheDocument();
     });
 
-    expect(authService.loginAdmin).not.toHaveBeenCalled();
+    expect(api.post).not.toHaveBeenCalled();
   });
 
-  test('CP-H03-F-02: debe iniciar sesión y redirigir al dashboard cuando las credenciales son válidas', async () => {
-    authService.loginAdmin.mockResolvedValue({
-      user: {
-        id: 1,
-        correo: 'admin@saferoute.com',
-        rol: 'admin',
+  test('CP-HU03-F-03: debe iniciar sesión y redirigir al dashboard cuando las credenciales son válidas', async () => {
+    api.post.mockResolvedValue({
+      data: {
+        user: {
+          id: 1,
+          correo: 'admin@saferoute.com',
+          rol: 'admin',
+        },
+        token: 'fake-jwt-token',
       },
-      token: 'fake-jwt-token',
     });
 
     render(
@@ -82,10 +136,10 @@ describe('Pruebas LoginAdmin - HU-03', () => {
     fireEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(authService.loginAdmin).toHaveBeenCalledWith(
-        'admin@saferoute.com',
-        'admin123'
-      );
+      expect(api.post).toHaveBeenCalledWith('/api/auth/admin-login', {
+        correo: 'admin@saferoute.com',
+        password: 'admin123',
+      });
     });
 
     expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
