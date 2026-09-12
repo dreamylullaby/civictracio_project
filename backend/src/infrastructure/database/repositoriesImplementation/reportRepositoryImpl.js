@@ -509,18 +509,25 @@ export default class ReportRepositoryImpl extends ReportRepository {
   }
 
   /**
-   * Obtiene todos los reportes de un usuario específico.
+   * Obtiene los reportes de un usuario con paginación.
+   * @param {string} usuarioId
+   * @param {number} page - página (1-based)
+   * @param {number} limit - registros por página
    */
-  async findByUsuario(usuarioId) {
-    const { data, error } = await supabase
+  async findByUsuario(usuarioId, page = 1, limit = 10) {
+    const from = (page - 1) * limit;
+    const to   = from + limit - 1;
+
+    const { data, error, count } = await supabase
       .from('reportes')
-      .select('*, zonas(barrio)')
+      .select('*, zonas(barrio)', { count: 'exact' })
       .eq('usuario_id', usuarioId)
       .neq('estado', 'eliminado')
-      .order('fecha_creacion', { ascending: false });
+      .order('fecha_creacion', { ascending: false })
+      .range(from, to);
 
     if (error) throw new Error(`Error al obtener reportes del usuario: ${error.message}`);
-    return data;
+    return { data, total: count, page, totalPages: Math.ceil(count / limit) };
   }
 
   /**

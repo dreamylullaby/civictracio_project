@@ -31,7 +31,7 @@ class PerfilDatasource {
     if (username != null) body['username'] = username;
     if (fotoUrl != null) body['foto_url'] = fotoUrl;
 
-    final res = await http.patch(
+    final res = await http.put(
       Uri.parse(_baseUrl),
       headers: await _headers(),
       body: jsonEncode(body),

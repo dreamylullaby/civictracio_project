@@ -32,7 +32,7 @@ class UserRemoteDatasource {
   }
 
   Future<UserModel> register({required String username, required String correo, required String password}) async {
-    final response = await http.post(Uri.parse("$baseUrl/register"), headers: {"Content-Type": "application/json"}, body: jsonEncode({"username": username, "correo": correo, "password": password}));
+    final response = await http.post(Uri.parse("$baseUrl/register"), headers: {"Content-Type": "application/json"}, body: jsonEncode({"username": username, "correo": correo, "password": password, "aceptaTerminos": true}));
     if (response.statusCode == 201) {
       final data = jsonDecode(response.body);
       await AuthStorage.saveToken(data["token"]);

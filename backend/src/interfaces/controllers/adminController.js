@@ -644,9 +644,198 @@ export const rechazarSolicitud = async (req, res) => {
 };
 
 /**
+ * PATCH /api/admin/reportes/:id/editar
+ * Edición completa de un reporte reasignado (HU-17).
+ * Solo aplica cuando el propietario del reporte tiene estado = 'eliminado'
+ * o cuando usuario_id = UUID anónimo (tras hard delete).
+ * Para reportes de usuarios activos se mantienen las restricciones actuales.
+ * Registra en auditoria_edicion_reportes los campos modificados y valores anteriores.
+ */
+export const editarReporteReasignado = async (req, res) => {
+  const UUID_ANONIMO = '645c346d-e56a-4022-b488-e8142e0c96a5';
+
+  try {
+    const { id }    = req.params;
+    const adminId   = req.user.id;
+
+    // Campos editables permitidos (no se permiten: id, usuario_id, latitud, longitud, fecha_creacion, zona_id)
+    const CAMPOS_EDITABLES = [
+      'tipo_reportante', 'fecha_incidente', 'franja_horaria',
+      'tipo_hurto', 'descripcion', 'objeto_hurtado',
+      'numero_agresores', 'barrio_ingresado', 'direccion',
+    ];
+
+    // Buscar reporte con datos del propietario
+    const { data: reporte, error: fetchError } = await db
+      .from('reportes')
+      .select(`
+        id, usuario_id, tipo_reportante, fecha_incidente, franja_horaria,
+        tipo_hurto, descripcion, objeto_hurtado, numero_agresores,
+        barrio_ingresado, direccion, estado,
+        usuarios!reportes_usuario_id_fkey(id, estado)
+      `)
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !reporte)
+      return res.status(404).json({ success: false, message: 'Reporte no encontrado' });
+
+    // Verificar que el reporte fue reasignado (propietario eliminado o UUID anónimo)
+    const propietarioEliminado = reporte.usuarios?.estado === 'eliminado';
+    const esAnonimo            = reporte.usuario_id === UUID_ANONIMO;
+
+    if (!propietarioEliminado && !esAnonimo)
+      return res.status(403).json({
+        success: false,
+        message: 'Este reporte no ha sido reasignado. Solo se permite edición completa en reportes de usuarios eliminados.',
+      });
+
+    // Extraer solo campos permitidos del body
+    const camposRecibidos = {};
+    for (const campo of CAMPOS_EDITABLES) {
+      if (req.body[campo] !== undefined) camposRecibidos[campo] = req.body[campo];
+    }
+
+    if (Object.keys(camposRecibidos).length === 0)
+      return res.status(400).json({ success: false, message: 'No se enviaron campos para actualizar' });
+
+    // Validaciones de valores permitidos
+    if (camposRecibidos.tipo_reportante !== undefined &&
+        !['victima', 'testigo'].includes(camposRecibidos.tipo_reportante))
+      return res.status(400).json({ success: false, message: "tipo_reportante inválido. Valores: victima, testigo" });
+
+    if (camposRecibidos.franja_horaria !== undefined &&
+        !['00:00-05:59', '06:00-11:59', '12:00-17:59', '18:00-23:59'].includes(camposRecibidos.franja_horaria))
+      return res.status(400).json({ success: false, message: "franja_horaria inválida. Valores: 00:00-05:59, 06:00-11:59, 12:00-17:59, 18:00-23:59" });
+
+    if (camposRecibidos.tipo_hurto !== undefined &&
+        !['atraco', 'raponazo', 'cosquilleo', 'fleteo'].includes(camposRecibidos.tipo_hurto))
+      return res.status(400).json({ success: false, message: "tipo_hurto inválido. Valores: atraco, raponazo, cosquilleo, fleteo" });
+
+    if (camposRecibidos.objeto_hurtado !== undefined &&
+        !['celular', 'dinero', 'tarjetas_documentos', 'articulos_personales', 'dispositivos_electronicos'].includes(camposRecibidos.objeto_hurtado))
+      return res.status(400).json({ success: false, message: "objeto_hurtado inválido." });
+
+    if (camposRecibidos.numero_agresores !== undefined &&
+        !['1', '2', '3+', 'desconocido'].includes(camposRecibidos.numero_agresores))
+      return res.status(400).json({ success: false, message: "numero_agresores inválido. Valores: 1, 2, 3+, desconocido" });
+
+    if (camposRecibidos.descripcion !== undefined &&
+        camposRecibidos.descripcion.trim().length > 300)
+      return res.status(400).json({ success: false, message: 'descripcion excede 300 caracteres' });
+
+    if (camposRecibidos.barrio_ingresado !== undefined)
+      camposRecibidos.barrio_ingresado = camposRecibidos.barrio_ingresado.trim();
+
+    // Guardar valores anteriores para auditoría
+    const valoresAnteriores = {};
+    for (const campo of Object.keys(camposRecibidos)) {
+      valoresAnteriores[campo] = reporte[campo];
+    }
+
+    // Actualizar reporte
+    const { error: updateError } = await db
+      .from('reportes')
+      .update({
+        ...camposRecibidos,
+        actualizado_por:     adminId,
+        fecha_actualizacion: new Date().toISOString(),
+      })
+      .eq('id', id);
+
+    if (updateError) throw updateError;
+
+    // Registrar auditoría (CA-4)
+    await db.from('auditoria_edicion_reportes').insert({
+      admin_id:           adminId,
+      reporte_id:         id,
+      campos_modificados: Object.keys(camposRecibidos),
+      valores_anteriores: valoresAnteriores,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Reporte actualizado correctamente',
+      data: { id, camposModificados: Object.keys(camposRecibidos) },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+/**
+ * PATCH /api/admin/reportes/eliminar-lote
+ * Soft delete en lote: cambia estado a 'eliminado' para los IDs recibidos.
+ * Body: { ids: string[] }
+ * Solo afecta reportes con estado != 'eliminado'.
+ */
+export const eliminarReportesLote = async (req, res) => {
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  try {
+    const { ids } = req.body;
+    const adminId = req.user.id;
+
+    if (!Array.isArray(ids) || ids.length === 0)
+      return res.status(400).json({ success: false, message: 'ids debe ser un array no vacío de UUIDs' });
+
+    const idsInvalidos = ids.filter(id => !UUID_REGEX.test(id));
+    if (idsInvalidos.length > 0)
+      return res.status(400).json({ success: false, message: `IDs inválidos: ${idsInvalidos.join(', ')}` });
+
+    if (ids.length > 500)
+      return res.status(400).json({ success: false, message: 'No se pueden eliminar más de 500 reportes a la vez' });
+
+    const { data: reportes, error: fetchError } = await db
+      .from('reportes')
+      .select('id, estado, tipo_hurto, barrio_ingresado')
+      .in('id', ids);
+
+    if (fetchError) throw fetchError;
+
+    const paraEliminar = reportes.filter(r => r.estado !== 'eliminado');
+    if (paraEliminar.length === 0)
+      return res.status(400).json({ success: false, message: 'Todos los reportes indicados ya están eliminados' });
+
+    const idsParaEliminar = paraEliminar.map(r => r.id);
+
+    const { error: updateError } = await db
+      .from('reportes')
+      .update({
+        estado:              'eliminado',
+        actualizado_por:     adminId,
+        fecha_actualizacion: new Date().toISOString(),
+      })
+      .in('id', idsParaEliminar);
+
+    if (updateError) throw updateError;
+
+    // Registrar auditoría por cada reporte
+    const auditorias = paraEliminar.map(r => ({
+      admin_id:        adminId,
+      reporte_id:      r.id,
+      accion:          'eliminar',
+      estado_anterior: r.estado,
+      estado_nuevo:    'eliminado',
+      detalle:         `Eliminación en lote: ${r.tipo_hurto} en ${r.barrio_ingresado}`,
+    }));
+    await db.from('auditoria_reportes').insert(auditorias).catch(() => {});
+
+    return res.status(200).json({
+      success: true,
+      message: `${idsParaEliminar.length} reporte(s) eliminado(s) correctamente`,
+      data: { eliminados: idsParaEliminar.length, omitidos: ids.length - idsParaEliminar.length },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
  * GET /api/admin/reportes/export
  * Exporta reportes filtrados en formato CSV o Excel.
  * Query params: fechaDesde, fechaHasta, zona (comuna), estado, formato (csv|excel)
+ * También acepta: ids (array JSON) para exportar IDs específicos con prioridad sobre filtros.
  * Límite máximo: 5000 registros.
  */
 export const exportarReportes = async (req, res) => {
@@ -655,23 +844,33 @@ export const exportarReportes = async (req, res) => {
       fechaDesde, fechaHasta,
       zona, estado,
       formato = 'excel',
+      ids: idsParam,
     } = req.query;
 
     const LIMITE = 5000;
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
     if (!['csv', 'excel'].includes(formato))
       return res.status(400).json({ success: false, message: "formato debe ser 'csv' o 'excel'" });
 
-    // Consultar vista de exportación con filtros
-    let query = db
-      .from('vw_export_reportes_admin')
-      .select('*')
-      .limit(LIMITE + 1); // +1 para detectar si excede el límite
+    // Si vienen IDs específicos, tienen prioridad sobre los filtros
+    let query = db.from('vw_export_reportes_admin').select('*').limit(LIMITE + 1);
 
-    if (fechaDesde) query = query.gte('fecha_incidente', fechaDesde);
-    if (fechaHasta) query = query.lte('fecha_incidente', fechaHasta);
-    if (estado)     query = query.eq('estado', estado);
-    if (zona)       query = query.eq('comuna', Number(zona));
+    if (idsParam) {
+      let ids;
+      try { ids = JSON.parse(idsParam); } catch { ids = []; }
+      if (!Array.isArray(ids) || ids.length === 0)
+        return res.status(400).json({ success: false, message: 'ids debe ser un array JSON de UUIDs' });
+      const idsInvalidos = ids.filter(id => !UUID_REGEX.test(id));
+      if (idsInvalidos.length > 0)
+        return res.status(400).json({ success: false, message: `IDs inválidos: ${idsInvalidos.join(', ')}` });
+      query = query.in('reporte_id', ids);
+    } else {
+      if (fechaDesde) query = query.gte('fecha_incidente', fechaDesde);
+      if (fechaHasta) query = query.lte('fecha_incidente', fechaHasta);
+      if (estado)     query = query.eq('estado', estado);
+      if (zona)       query = query.eq('comuna', Number(zona));
+    }
 
     const { data, error } = await query;
     if (error) throw error;
