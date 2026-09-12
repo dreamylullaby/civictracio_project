@@ -36,25 +36,19 @@ class _MisReportesPageState extends State<MisReportesPage> {
     'eliminado': Color(0xFFDC2626),
   };
 
+  static const int _limit = 8;
+
   @override
   void initState() {
     super.initState();
     _cargar(reset: true);
-    _scrollCtrl.addListener(_onScroll);
+    // Sin listener manual — usa NotificationListener en el build
   }
 
   @override
   void dispose() {
     _scrollCtrl.dispose();
     super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 100 &&
-        !_cargandoMas &&
-        _page < _totalPages) {
-      _cargarMas();
-    }
   }
 
   Future<Map<String, String>> get _headers async {
@@ -67,24 +61,27 @@ class _MisReportesPageState extends State<MisReportesPage> {
       setState(() { _cargando = true; _page = 1; _reportes = []; });
     }
     try {
-      final res = await http.get(
-        Uri.parse('$_base/mis-reportes?page=1&limit=10'),
-        headers: await _headers,
+      final url = Uri.parse('$_base/mis-reportes').replace(
+        queryParameters: {'page': '1', 'limit': '$_limit'},
       );
+      debugPrint('[MisReportes] GET $url');
+      final res = await http.get(url, headers: await _headers);
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
+        debugPrint('[MisReportes] total=${body['total']} totalPages=${body['totalPages']} recibidos=${(body['data'] as List?)?.length}');
         if (!mounted) return;
         setState(() {
-          _reportes    = List<Map<String, dynamic>>.from(body['data'] ?? []);
-          _page        = 1;
-          _totalPages  = body['totalPages'] ?? 1;
-          _cargando    = false;
+          _reportes   = List<Map<String, dynamic>>.from(body['data'] ?? []);
+          _page       = 1;
+          _totalPages = body['totalPages'] ?? 1;
+          _cargando   = false;
         });
       } else {
+        debugPrint('[MisReportes] Error HTTP ${res.statusCode}: ${res.body}');
         throw Exception('Error ${res.statusCode}');
       }
     } catch (e) {
-      debugPrint('Error cargando mis reportes: $e');
+      debugPrint('[MisReportes] Excepción: $e');
       if (!mounted) return;
       setState(() => _cargando = false);
     }
@@ -95,12 +92,14 @@ class _MisReportesPageState extends State<MisReportesPage> {
     setState(() => _cargandoMas = true);
     try {
       final nextPage = _page + 1;
-      final res = await http.get(
-        Uri.parse('$_base/mis-reportes?page=$nextPage&limit=10'),
-        headers: await _headers,
+      final url = Uri.parse('$_base/mis-reportes').replace(
+        queryParameters: {'page': '$nextPage', 'limit': '$_limit'},
       );
+      debugPrint('[MisReportes] cargarMas GET $url');
+      final res = await http.get(url, headers: await _headers);
       if (res.statusCode == 200 && mounted) {
         final body = jsonDecode(res.body);
+        debugPrint('[MisReportes] cargarMas recibidos=${(body['data'] as List?)?.length}');
         setState(() {
           _reportes.addAll(List<Map<String, dynamic>>.from(body['data'] ?? []));
           _page       = nextPage;
@@ -108,7 +107,7 @@ class _MisReportesPageState extends State<MisReportesPage> {
         });
       }
     } catch (e) {
-      debugPrint('Error cargando más reportes: $e');
+      debugPrint('[MisReportes] cargarMas excepción: $e');
     } finally {
       if (mounted) setState(() => _cargandoMas = false);
     }
@@ -260,19 +259,30 @@ class _MisReportesPageState extends State<MisReportesPage> {
               ? _emptyState(textMain, textSub)
               : RefreshIndicator(
                   onRefresh: () => _cargar(reset: true),
-                  child: ListView.builder(
-                    controller: _scrollCtrl,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _reportes.length + (_cargandoMas || _page < _totalPages ? 1 : 0),
-                    itemBuilder: (_, i) {
-                      if (i == _reportes.length) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 20),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
+                  child: NotificationListener<ScrollEndNotification>(
+                    onNotification: (notification) {
+                      if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 120 &&
+                          !_cargandoMas &&
+                          _page < _totalPages) {
+                        _cargarMas();
                       }
-                      return _reporteCard(_reportes[i], cardColor, textMain, textSub, borderColor);
+                      return false;
                     },
+                    child: ListView.builder(
+                      controller: _scrollCtrl,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom + 24),
+                      itemCount: _reportes.length + (_cargandoMas || _page < _totalPages ? 1 : 0),
+                      itemBuilder: (_, i) {
+                        if (i == _reportes.length) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        return _reporteCard(_reportes[i], cardColor, textMain, textSub, borderColor);
+                      },
+                    ),
                   ),
                 ),
     );

@@ -681,10 +681,12 @@ export const editarReporteReasignado = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Reporte no encontrado' });
 
     // Verificar que el reporte fue reasignado (propietario eliminado o UUID anónimo)
+    // También cubre el caso hard delete: si el join devuelve null, el usuario ya no existe
     const propietarioEliminado = reporte.usuarios?.estado === 'eliminado';
+    const propietarioNoExiste  = reporte.usuarios === null || reporte.usuarios === undefined;
     const esAnonimo            = reporte.usuario_id === UUID_ANONIMO;
 
-    if (!propietarioEliminado && !esAnonimo)
+    if (!propietarioEliminado && !propietarioNoExiste && !esAnonimo)
       return res.status(403).json({
         success: false,
         message: 'Este reporte no ha sido reasignado. Solo se permite edición completa en reportes de usuarios eliminados.',

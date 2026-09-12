@@ -26,6 +26,7 @@ export default function TabIncidentes({ onCountChange }) {
   var [modalType, setModalType] = useState(null);
   var [modalEstado, setModalEstado] = useState(null); // { id, tipo_hurto, fecha, estadoActual, nuevoEstado }
   var [modalEditar, setModalEditar] = useState(null); // { id, tipoActual, descripcion }
+  var [modalEditarCompleto, setModalEditarCompleto] = useState(null); // { id, reporte } para HU-17
   var [modalHardDelete, setModalHardDelete] = useState(null); // { id, tipo: "reporte" }
   var [nuevoTipo, setNuevoTipo] = useState("");
   var [procesando, setProcesando] = useState(false);
@@ -72,12 +73,34 @@ export default function TabIncidentes({ onCountChange }) {
     setModalEstado({ id: r.id, tipo_hurto: r.tipo_hurto, fecha: r.fecha_incidente, estadoActual: r.estado, nuevoEstado: nuevoEstado });
   };
 
+  var UUID_ANONIMO = "645c346d-e56a-4022-b488-e8142e0c96a5";
+
+  var esReasignado = function (r) {
+    if (!r) return false;
+    if (r.usuario_id === UUID_ANONIMO) return true;
+    if (r.propietario_estado === "eliminado") return true;
+    if (r.propietario_no_existe === true) return true;
+    return false;
+  };
+
   var abrirModalEditar = async function (id) {
     try {
       var data = await getReporteById(id);
       setModalEditar({ id: data.id, tipoActual: data.tipo_hurto, descripcion: data.descripcion });
       setNuevoTipo(data.tipo_hurto);
     } catch (e) { console.error(e); }
+  };
+
+  var abrirEdicion = async function (r) {
+    if (esReasignado(r)) {
+      // Edición completa HU-17
+      try {
+        var data = await getReporteById(r.id);
+        setModalEditarCompleto({ id: data.id, reporte: { ...r, ...data } });
+      } catch (e) { console.error(e); }
+    } else {
+      abrirModalEditar(r.id);
+    }
   };
 
   var confirmarEdicion = async function () {
@@ -306,6 +329,16 @@ export default function TabIncidentes({ onCountChange }) {
         </ModalBase>
       )}
 
+      {/* Modal edición completa HU-17 (reporte reasignado) */}
+      {modalEditarCompleto && (
+        <ModalEditarCompleto
+          reporte={modalEditarCompleto.reporte}
+          onClose={function () { setModalEditarCompleto(null); }}
+          onGuardado={function () { setModalEditarCompleto(null); cargar(); setMensaje({ tipo: "ok", texto: "Reporte actualizado correctamente" }); }}
+          onError={function (msg) { setMensaje({ tipo: "error", texto: msg }); }}
+        />
+      )}
+
       {/* Modal cambio de estado */}
       {modalEstado && (
         <ModalBase onClose={function () { setModalEstado(null); }} maxWidth={420}>
@@ -441,7 +474,7 @@ export default function TabIncidentes({ onCountChange }) {
                     <td style={{ ...TD, textAlign: "center" }}>
                       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
                         <button onClick={function () { abrirModal(r.id, "ver"); }} style={BTN_ICO("#EFF6FF", "#2563EB")} title="Ver detalle"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                        <button onClick={function () { abrirModalEditar(r.id); }} style={BTN_ICO("#FFFBEB", "#D97706")} title="Editar tipo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
+                        <button onClick={function () { abrirEdicion(r); }} style={BTN_ICO(esReasignado(r) ? "#EDE9FE" : "#FFFBEB", esReasignado(r) ? "#7C3AED" : "#D97706")} title={esReasignado(r) ? "Editar completo (reasignado)" : "Editar tipo"}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
                         {ops.map(function (op) {
                           return <button key={op.estado} onClick={function () { op.estado === "permanente" ? hardDeleteReporte(r.id) : abrirModalEstado(r, op.estado); }} style={BTN_ICO(op.bg, op.color)} title={op.label}>
                             {op.estado === "oculto" && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>}
@@ -563,6 +596,105 @@ function ModalBase(props) {
     </div>
   );
 }
+
+var TIPOS_HURTO_EC      = ["atraco", "raponazo", "cosquilleo", "fleteo"];
+var TIPOS_REPORTANTE_EC = ["victima", "testigo"];
+var FRANJAS_EC          = ["00:00-05:59", "06:00-11:59", "12:00-17:59", "18:00-23:59"];
+var OBJETOS_EC          = ["celular", "dinero", "tarjetas_documentos", "articulos_personales", "dispositivos_electronicos"];
+var NUM_AGRESORES_EC    = ["1", "2", "3+", "desconocido"];
+
+function ModalEditarCompleto({ reporte, onClose, onGuardado, onError }) {
+  var [form, setForm] = useState({
+    tipo_reportante:  reporte.tipo_reportante  || "",
+    fecha_incidente:  reporte.fecha_incidente  || "",
+    franja_horaria:   reporte.franja_horaria   || "",
+    tipo_hurto:       reporte.tipo_hurto       || "",
+    descripcion:      reporte.descripcion      || "",
+    objeto_hurtado:   reporte.objeto_hurtado   || "",
+    numero_agresores: reporte.numero_agresores || "",
+    barrio_ingresado: reporte.barrio_ingresado || "",
+    direccion:        reporte.direccion        || "",
+  });
+  var [guardando, setGuardando] = useState(false);
+
+  var handleChange = function (k, v) { setForm(function (f) { return { ...f, [k]: v }; }); };
+
+  var guardar = async function () {
+    var cambios = {};
+    for (var k of Object.keys(form)) {
+      if (form[k] !== (reporte[k] ?? "")) cambios[k] = form[k];
+    }
+    if (Object.keys(cambios).length === 0) { onError("No hay cambios para guardar"); return; }
+    setGuardando(true);
+    try {
+      var { default: api } = await import("../../services/api.js");
+      await api.patch("/api/admin/reportes/" + reporte.id + "/editar", cambios);
+      onGuardado();
+    } catch (e) {
+      onError(e.response?.data?.message || "Error al guardar");
+    } finally { setGuardando(false); }
+  };
+
+  var campoSel = function (label, key, opciones) {
+    return (
+      <div key={key} style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
+        <label style={{ fontSize: 11, color: "#64748B", fontWeight: 500 }}>{label}</label>
+        <select value={form[key]} onChange={function (e) { handleChange(key, e.target.value); }} style={S_EC_INPUT}>
+          <option value="">— sin cambio —</option>
+          {opciones.map(function (o) { return <option key={o} value={o}>{o}</option>; })}
+        </select>
+      </div>
+    );
+  };
+
+  var campoTexto = function (label, key, esTextarea) {
+    return (
+      <div key={key} style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
+        <label style={{ fontSize: 11, color: "#64748B", fontWeight: 500 }}>{label}</label>
+        {esTextarea
+          ? <textarea value={form[key]} onChange={function (e) { handleChange(key, e.target.value); }} style={{ ...S_EC_INPUT, height: 68, resize: "vertical" }} maxLength={300} />
+          : <input type={key === "fecha_incidente" ? "date" : "text"} value={form[key]} onChange={function (e) { handleChange(key, e.target.value); }} style={S_EC_INPUT} />
+        }
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div style={{ backgroundColor: "#fff", borderRadius: 12, width: "100%", maxWidth: 520, maxHeight: "88vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }} onClick={function (e) { e.stopPropagation(); }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px 14px", borderBottom: "1px solid #E2E8F0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter',sans-serif" }}>Editar reporte</h2>
+            <span style={{ padding: "2px 8px", borderRadius: 10, backgroundColor: "#EDE9FE", color: "#6D28D9", fontSize: 11, fontWeight: 600 }}>Reasignado</span>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "#64748B" }}>✕</button>
+        </div>
+        <div style={{ padding: "16px 20px" }}>
+          <p style={{ margin: "0 0 14px", fontSize: 12, color: "#64748B", backgroundColor: "#F8FAFC", padding: "8px 12px", borderRadius: 8 }}>
+            Reporte reasignado. Solo se envían los campos que modifiques.
+          </p>
+          {campoSel("Tipo reportante",  "tipo_reportante",  TIPOS_REPORTANTE_EC)}
+          {campoTexto("Fecha incidente", "fecha_incidente")}
+          {campoSel("Franja horaria",   "franja_horaria",   FRANJAS_EC)}
+          {campoSel("Tipo de hurto",    "tipo_hurto",       TIPOS_HURTO_EC)}
+          {campoSel("Objeto hurtado",   "objeto_hurtado",   OBJETOS_EC)}
+          {campoSel("N° agresores",     "numero_agresores", NUM_AGRESORES_EC)}
+          {campoTexto("Barrio",         "barrio_ingresado")}
+          {campoTexto("Dirección",      "direccion")}
+          {campoTexto("Descripción",    "descripcion",      true)}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "12px 20px 16px", borderTop: "1px solid #E2E8F0" }}>
+          <button onClick={onClose} disabled={guardando} style={{ padding: "9px 18px", borderRadius: 8, border: "1px solid #CBD5E1", backgroundColor: "#fff", color: "#64748B", cursor: "pointer", fontSize: 13 }}>Cancelar</button>
+          <button onClick={guardar} disabled={guardando} style={{ padding: "9px 18px", borderRadius: 8, border: "none", backgroundColor: "#2563EB", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+            {guardando ? "Guardando..." : "Guardar cambios"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+var S_EC_INPUT = { padding: "7px 10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13, color: "#1E293B", width: "100%", boxSizing: "border-box" };
 
 function Fila(props) {
   if (!props.valor) return null;
