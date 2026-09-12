@@ -16,8 +16,12 @@ class MisReportesPage extends StatefulWidget {
 
 class _MisReportesPageState extends State<MisReportesPage> {
   bool _cargando = true;
+  bool _cargandoMas = false;
   List<Map<String, dynamic>> _reportes = [];
+  int _page = 1;
+  int _totalPages = 1;
   final String _base = '${dotenv.env['API_BASE_URL']}/api/reportes';
+  final ScrollController _scrollCtrl = ScrollController();
 
   static const _coloresTipo = {
     'atraco': AppColors.hurtoAtraco,
@@ -35,7 +39,22 @@ class _MisReportesPageState extends State<MisReportesPage> {
   @override
   void initState() {
     super.initState();
-    _cargar();
+    _cargar(reset: true);
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 100 &&
+        !_cargandoMas &&
+        _page < _totalPages) {
+      _cargarMas();
+    }
   }
 
   Future<Map<String, String>> get _headers async {
@@ -43,14 +62,24 @@ class _MisReportesPageState extends State<MisReportesPage> {
     return {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'};
   }
 
-  Future<void> _cargar() async {
-    setState(() => _cargando = true);
+  Future<void> _cargar({bool reset = false}) async {
+    if (reset) {
+      setState(() { _cargando = true; _page = 1; _reportes = []; });
+    }
     try {
-      final res = await http.get(Uri.parse('$_base/mis-reportes'), headers: await _headers);
+      final res = await http.get(
+        Uri.parse('$_base/mis-reportes?page=1&limit=10'),
+        headers: await _headers,
+      );
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
         if (!mounted) return;
-        setState(() { _reportes = List<Map<String, dynamic>>.from(body['data'] ?? []); _cargando = false; });
+        setState(() {
+          _reportes    = List<Map<String, dynamic>>.from(body['data'] ?? []);
+          _page        = 1;
+          _totalPages  = body['totalPages'] ?? 1;
+          _cargando    = false;
+        });
       } else {
         throw Exception('Error ${res.statusCode}');
       }
@@ -58,6 +87,30 @@ class _MisReportesPageState extends State<MisReportesPage> {
       debugPrint('Error cargando mis reportes: $e');
       if (!mounted) return;
       setState(() => _cargando = false);
+    }
+  }
+
+  Future<void> _cargarMas() async {
+    if (_cargandoMas || _page >= _totalPages) return;
+    setState(() => _cargandoMas = true);
+    try {
+      final nextPage = _page + 1;
+      final res = await http.get(
+        Uri.parse('$_base/mis-reportes?page=$nextPage&limit=10'),
+        headers: await _headers,
+      );
+      if (res.statusCode == 200 && mounted) {
+        final body = jsonDecode(res.body);
+        setState(() {
+          _reportes.addAll(List<Map<String, dynamic>>.from(body['data'] ?? []));
+          _page       = nextPage;
+          _totalPages = body['totalPages'] ?? _totalPages;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error cargando más reportes: $e');
+    } finally {
+      if (mounted) setState(() => _cargandoMas = false);
     }
   }
 
@@ -84,7 +137,7 @@ class _MisReportesPageState extends State<MisReportesPage> {
       builder: (_) => _EditarReportePage(
         reporte: r,
         baseUrl: _base,
-        onGuardado: () { _cargar(); _mostrarMensaje('Reporte actualizado'); },
+        onGuardado: () { _cargar(reset: true); _mostrarMensaje('Reporte actualizado'); },
         onError: (msg) => _mostrarMensaje(msg, error: true),
       ),
     ));
@@ -206,11 +259,20 @@ class _MisReportesPageState extends State<MisReportesPage> {
           : _reportes.isEmpty
               ? _emptyState(textMain, textSub)
               : RefreshIndicator(
-                  onRefresh: _cargar,
+                  onRefresh: () => _cargar(reset: true),
                   child: ListView.builder(
+                    controller: _scrollCtrl,
                     padding: const EdgeInsets.all(16),
-                    itemCount: _reportes.length,
-                    itemBuilder: (_, i) => _reporteCard(_reportes[i], cardColor, textMain, textSub, borderColor),
+                    itemCount: _reportes.length + (_cargandoMas || _page < _totalPages ? 1 : 0),
+                    itemBuilder: (_, i) {
+                      if (i == _reportes.length) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      return _reporteCard(_reportes[i], cardColor, textMain, textSub, borderColor);
+                    },
                   ),
                 ),
     );
