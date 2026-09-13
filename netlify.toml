@@ -1,6 +1,6 @@
 [build]
   base = "frontend-web/dashboard"
-  command = "npm install && npm run build"
+  command = "npm install --include=optional && npm run build"
   publish = "dist"
 
 [build.environment]
