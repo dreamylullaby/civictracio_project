@@ -17,6 +17,8 @@ import {
   hardDeleteReporte,
   cambiarEstadoReporte,
   editarTipoHurtoReporte,
+  editarReporteReasignado,
+  eliminarReportesLote,
   listarSolicitudesEliminacion,
   detalleSolicitudEliminacion,
   aprobarSolicitud,
@@ -47,11 +49,17 @@ router.patch("/usuarios/:id/eliminar", eliminarUsuario);
 /** DELETE /api/admin/usuarios/:id/permanente — Hard delete de usuario */
 router.delete("/usuarios/:id/permanente", hardDeleteUsuario);
 
+/** PATCH /api/admin/reportes/eliminar-lote — Soft delete en lote por IDs */
+router.patch("/reportes/eliminar-lote", eliminarReportesLote);
+
 /** PATCH /api/admin/reportes/:id/estado — Cambia el estado de un reporte */
 router.patch("/reportes/:id/estado", cambiarEstadoReporte);
 
 /** PATCH /api/admin/reportes/:id/tipo — Edita el tipo de hurto de un reporte */
 router.patch("/reportes/:id/tipo", editarTipoHurtoReporte);
+
+/** PATCH /api/admin/reportes/:id/editar — Edición completa de reporte reasignado (HU-17) */
+router.patch("/reportes/:id/editar", editarReporteReasignado);
 
 /** DELETE /api/admin/reportes/:id/permanente — Hard delete de reporte */
 router.delete("/reportes/:id/permanente", hardDeleteReporte);

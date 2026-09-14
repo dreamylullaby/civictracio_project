@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getReportesAdmin, getReporteById, cambiarEstadoReporte, editarTipoHurtoReporte } from "../../services/reportService.js";
+import { getReportesAdmin, getReporteById, cambiarEstadoReporte, editarTipoHurtoReporte, eliminarReportesLote } from "../../services/reportService.js";
 import api from "../../services/api.js";
 import CustomSelect from "../../components/CustomSelect.jsx";
 import CustomDatePicker from "../../components/CustomDatePicker.jsx";
@@ -26,6 +26,7 @@ export default function TabIncidentes({ onCountChange }) {
   var [modalType, setModalType] = useState(null);
   var [modalEstado, setModalEstado] = useState(null); // { id, tipo_hurto, fecha, estadoActual, nuevoEstado }
   var [modalEditar, setModalEditar] = useState(null); // { id, tipoActual, descripcion }
+  var [modalEditarCompleto, setModalEditarCompleto] = useState(null); // { id, reporte } para HU-17
   var [modalHardDelete, setModalHardDelete] = useState(null); // { id, tipo: "reporte" }
   var [nuevoTipo, setNuevoTipo] = useState("");
   var [procesando, setProcesando] = useState(false);
@@ -72,12 +73,34 @@ export default function TabIncidentes({ onCountChange }) {
     setModalEstado({ id: r.id, tipo_hurto: r.tipo_hurto, fecha: r.fecha_incidente, estadoActual: r.estado, nuevoEstado: nuevoEstado });
   };
 
+  var UUID_ANONIMO = "645c346d-e56a-4022-b488-e8142e0c96a5";
+
+  var esReasignado = function (r) {
+    if (!r) return false;
+    if (r.usuario_id === UUID_ANONIMO) return true;
+    if (r.propietario_estado === "eliminado") return true;
+    if (r.propietario_no_existe === true) return true;
+    return false;
+  };
+
   var abrirModalEditar = async function (id) {
     try {
       var data = await getReporteById(id);
       setModalEditar({ id: data.id, tipoActual: data.tipo_hurto, descripcion: data.descripcion });
       setNuevoTipo(data.tipo_hurto);
     } catch (e) { console.error(e); }
+  };
+
+  var abrirEdicion = async function (r) {
+    if (esReasignado(r)) {
+      // Edición completa HU-17
+      try {
+        var data = await getReporteById(r.id);
+        setModalEditarCompleto({ id: data.id, reporte: { ...r, ...data } });
+      } catch (e) { console.error(e); }
+    } else {
+      abrirModalEditar(r.id);
+    }
   };
 
   var confirmarEdicion = async function () {
@@ -109,19 +132,27 @@ export default function TabIncidentes({ onCountChange }) {
 
   var [formatoExport, setFormatoExport] = useState("excel");
   var [exportando, setExportando] = useState(false);
+  var [seleccionados, setSeleccionados] = useState(new Set()); // IDs seleccionados (persisten entre filtros)
+  var [eliminandoLote, setEliminandoLote] = useState(false);
+  var [modalEliminarLote, setModalEliminarLote] = useState(false);
 
   var descargarReportes = async function () {
     setExportando(true);
     try {
       var params = { formato: formatoExport };
-      if (filtros.fechaDesde) params.fechaDesde = filtros.fechaDesde;
-      if (filtros.fechaHasta) params.fechaHasta = filtros.fechaHasta;
-      if (filtros.estado) params.estado = filtros.estado;
-      if (filtros.comuna) params.zona = filtros.comuna;
+
+      // Si hay selección manual, exportar solo esos IDs
+      if (seleccionados.size > 0) {
+        params.ids = JSON.stringify(Array.from(seleccionados));
+      } else {
+        if (filtros.fechaDesde) params.fechaDesde = filtros.fechaDesde;
+        if (filtros.fechaHasta) params.fechaHasta = filtros.fechaHasta;
+        if (filtros.estado) params.estado = filtros.estado;
+        if (filtros.comuna) params.zona = filtros.comuna;
+      }
 
       var response = await api.get("/api/admin/reportes/export", { params: params, responseType: "blob" });
 
-      // Si el backend devuelve JSON (error o sin datos), leerlo
       var contentType = response.headers["content-type"] || "";
       if (contentType.includes("application/json")) {
         var text = await response.data.text();
@@ -139,11 +170,51 @@ export default function TabIncidentes({ onCountChange }) {
       a.download = "reportes_civictrackio_" + new Date().toISOString().split("T")[0] + "." + ext;
       a.click();
       URL.revokeObjectURL(url);
-      setMensaje({ tipo: "ok", texto: "Archivo descargado correctamente" });
+      setMensaje({ tipo: "ok", texto: seleccionados.size > 0 ? "Archivo descargado (" + seleccionados.size + " reportes seleccionados)" : "Archivo descargado correctamente" });
     } catch (err) {
       setMensaje({ tipo: "error", texto: err.response?.data?.message || "Error al exportar" });
     } finally { setExportando(false); }
   };
+
+  var confirmarEliminarLote = async function () {
+    if (seleccionados.size === 0) return;
+    setEliminandoLote(true);
+    try {
+      var res = await eliminarReportesLote(Array.from(seleccionados));
+      setMensaje({ tipo: "ok", texto: res.message || "Reportes eliminados correctamente" });
+      setSeleccionados(new Set());
+      setModalEliminarLote(false);
+      cargar();
+    } catch (err) {
+      setMensaje({ tipo: "error", texto: err.response?.data?.message || "Error al eliminar en lote" });
+      setModalEliminarLote(false);
+    } finally { setEliminandoLote(false); }
+  };
+
+  // Helpers de selección
+  var toggleSeleccion = function (id) {
+    setSeleccionados(function (prev) {
+      var next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  };
+
+  var toggleSeleccionPagina = function () {
+    var idsPagina = reportes.map(function (r) { return r.id; });
+    var todosMarcados = idsPagina.every(function (id) { return seleccionados.has(id); });
+    setSeleccionados(function (prev) {
+      var next = new Set(prev);
+      if (todosMarcados) { idsPagina.forEach(function (id) { next.delete(id); }); }
+      else { idsPagina.forEach(function (id) { next.add(id); }); }
+      return next;
+    });
+  };
+
+  var idsPagina = reportes.map(function (r) { return r.id; });
+  var seleccionadosEnPagina = idsPagina.filter(function (id) { return seleccionados.has(id); }).length;
+  var todaLaPaginaMarcada = idsPagina.length > 0 && seleccionadosEnPagina === idsPagina.length;
+  var algunoFueraDeVista = seleccionados.size > seleccionadosEnPagina;
 
   var setFiltro = function (key, val) {
     setFiltros(function (f) { return { ...f, [key]: val }; });
@@ -206,6 +277,32 @@ export default function TabIncidentes({ onCountChange }) {
         </div>
       )}
 
+      {/* Modal eliminación en lote */}
+      {modalEliminarLote && (
+        <ModalBase onClose={function () { setModalEliminarLote(false); }} maxWidth={440}>
+          <div style={{ backgroundColor: "#FEF2F2", padding: "16px 20px", borderRadius: "12px 12px 0 0", display: "flex", alignItems: "center", gap: 10 }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "#DC2626", fontFamily: "'Inter',sans-serif" }}>Eliminar reportes seleccionados</h2>
+          </div>
+          <div style={{ padding: "20px 24px" }}>
+            <p style={{ color: "#1E293B", fontSize: 14, marginBottom: 12, lineHeight: 1.6 }}>
+              Estás a punto de <strong>eliminar {seleccionados.size} reporte(s)</strong> seleccionados.
+            </p>
+            <div style={{ backgroundColor: "#FFF7ED", borderRadius: 8, padding: "12px 14px", marginBottom: 20, border: "1px solid #FED7AA" }}>
+              <p style={{ margin: 0, fontSize: 13, color: "#9A3412", lineHeight: 1.5 }}>
+                Esta acción es <strong>reversible</strong>: los reportes quedarán en estado "eliminado" y podrán restaurarse.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={function () { setModalEliminarLote(false); }} disabled={eliminandoLote} style={{ flex: 1, height: 40, borderRadius: 8, border: "1px solid #CBD5E1", backgroundColor: "#fff", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancelar</button>
+              <button onClick={confirmarEliminarLote} disabled={eliminandoLote} style={{ flex: 1, height: 40, borderRadius: 8, border: "none", backgroundColor: "#DC2626", color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
+                {eliminandoLote ? "Eliminando..." : "Eliminar " + seleccionados.size + " reporte(s)"}
+              </button>
+            </div>
+          </div>
+        </ModalBase>
+      )}
+
       {/* Modal Hard Delete */}
       {modalHardDelete && (
         <ModalBase onClose={function () { setModalHardDelete(null); }} maxWidth={440}>
@@ -230,6 +327,16 @@ export default function TabIncidentes({ onCountChange }) {
             </div>
           </div>
         </ModalBase>
+      )}
+
+      {/* Modal edición completa HU-17 (reporte reasignado) */}
+      {modalEditarCompleto && (
+        <ModalEditarCompleto
+          reporte={modalEditarCompleto.reporte}
+          onClose={function () { setModalEditarCompleto(null); }}
+          onGuardado={function () { setModalEditarCompleto(null); cargar(); setMensaje({ tipo: "ok", texto: "Reporte actualizado correctamente" }); }}
+          onError={function (msg) { setMensaje({ tipo: "error", texto: msg }); }}
+        />
       )}
 
       {/* Modal cambio de estado */}
@@ -283,9 +390,19 @@ export default function TabIncidentes({ onCountChange }) {
             ) : (
               <>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                <span>Descargar</span>
+                <span>{seleccionados.size > 0 ? "Descargar (" + seleccionados.size + ")" : "Descargar"}</span>
               </>
             )}
+          </button>
+          <button
+            onClick={function () {
+              if (seleccionados.size === 0) { setMensaje({ tipo: "error", texto: "Selecciona al menos un reporte para eliminar" }); return; }
+              setModalEliminarLote(true);
+            }}
+            style={{ display: "flex", alignItems: "center", gap: 6, height: 38, padding: "0 16px", borderRadius: 8, border: "none", backgroundColor: seleccionados.size > 0 ? "#DC2626" : "#CBD5E1", color: "#fff", fontFamily: "'Montserrat',sans-serif", fontWeight: 500, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <span>Eliminar{seleccionados.size > 0 ? " (" + seleccionados.size + ")" : ""}</span>
           </button>
           <button onClick={function () { setFiltros({ busqueda: "", tipo_hurto: "", estado: "", comuna: "", corregimiento: "", franja: "", fechaDesde: "", fechaHasta: "" }); setPage(1); }} style={{ height: 38, padding: "0 14px", borderRadius: 8, border: "1px solid #CBD5E1", backgroundColor: "transparent", color: "#64748B", fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>Limpiar</button>
         </div>
@@ -297,12 +414,32 @@ export default function TabIncidentes({ onCountChange }) {
         <span style={{ fontSize: 12, color: "#9A3412", fontWeight: 400, lineHeight: 1.5 }}><strong>Eliminar</strong> cambia el estado del reporte (reversible, se puede restaurar). <strong>Borrar</strong> elimina permanentemente el registro de la base de datos (irreversible). El botón "Borrar" solo aparece en reportes con estado "Eliminado".</span>
       </div>
 
+      {/* Indicador de selección activa */}
+      {seleccionados.size > 0 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", backgroundColor: "#EFF6FF", borderRadius: 8, border: "1px solid #BFDBFE" }}>
+          <span style={{ fontSize: 13, color: "#1D4ED8", fontWeight: 500 }}>
+            {seleccionados.size} reporte(s) seleccionado(s)
+            {algunoFueraDeVista && <span style={{ color: "#2563EB", fontWeight: 400 }}> &nbsp;· {seleccionados.size - seleccionadosEnPagina} fuera de esta página</span>}
+          </span>
+          <button onClick={function () { setSeleccionados(new Set()); }} style={{ background: "none", border: "none", color: "#2563EB", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>Limpiar selección</button>
+        </div>
+      )}
+
       {/* Tabla */}
       {cargando ? (<p style={{ color: "#64748b", textAlign: "center", padding: 40, fontWeight: 300 }}>Cargando...</p>) : (
         <div style={CARD_TABLE}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: "'Inter',sans-serif" }}>
             <thead><tr style={{ backgroundColor: "#2563EB" }}>
-              <th style={{ ...TH, borderRadius: "8px 0 0 0" }}>FECHA</th>
+              <th style={{ ...TH, width: 40, textAlign: "center", borderRadius: "8px 0 0 0" }}>
+                <input
+                  type="checkbox"
+                  checked={todaLaPaginaMarcada}
+                  onChange={toggleSeleccionPagina}
+                  style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#fff" }}
+                  title={todaLaPaginaMarcada ? "Deseleccionar página" : "Seleccionar página"}
+                />
+              </th>
+              <th style={TH}>FECHA</th>
               <th style={TH}>USUARIO</th>
               <th style={TH}>ZONA</th>
               <th style={TH}>TIPO</th>
@@ -311,15 +448,24 @@ export default function TabIncidentes({ onCountChange }) {
             </tr></thead>
             <tbody>
               {reportes.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: 40, textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No se encontraron reportes</td></tr>
+                <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No se encontraron reportes</td></tr>
               ) : reportes.map(function (r, idx) {
                 var bg = idx % 2 === 0 ? "#fff" : "#F8FAFC";
                 var tipoColor = COLORES_TIPO[r.tipo_hurto] || "#64748b";
                 var ops = opcionesEstado(r);
                 var username = r.username || "—";
                 var zona = r.corregimiento_nombre ? r.corregimiento_nombre : (r.comuna ? "Comuna " + r.comuna : "—");
+                var estaSeleccionado = seleccionados.has(r.id);
                 return (
-                  <tr key={r.id} style={{ backgroundColor: bg, borderBottom: "1px solid #F1F5F9" }}>
+                  <tr key={r.id} style={{ backgroundColor: estaSeleccionado ? "#EFF6FF" : bg, borderBottom: "1px solid #F1F5F9", outline: estaSeleccionado ? "1px solid #BFDBFE" : "none" }}>
+                    <td style={{ ...TD, textAlign: "center", width: 40 }}>
+                      <input
+                        type="checkbox"
+                        checked={estaSeleccionado}
+                        onChange={function () { toggleSeleccion(r.id); }}
+                        style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#2563EB" }}
+                      />
+                    </td>
                     <td style={TD}>{fmtFecha(r.fecha_incidente)}</td>
                     <td style={{ ...TD, fontSize: 12, color: "#64748B" }}>{username}</td>
                     <td style={TD}>{zona}</td>
@@ -328,7 +474,7 @@ export default function TabIncidentes({ onCountChange }) {
                     <td style={{ ...TD, textAlign: "center" }}>
                       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
                         <button onClick={function () { abrirModal(r.id, "ver"); }} style={BTN_ICO("#EFF6FF", "#2563EB")} title="Ver detalle"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                        <button onClick={function () { abrirModalEditar(r.id); }} style={BTN_ICO("#FFFBEB", "#D97706")} title="Editar tipo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
+                        <button onClick={function () { abrirEdicion(r); }} style={BTN_ICO(esReasignado(r) ? "#EDE9FE" : "#FFFBEB", esReasignado(r) ? "#7C3AED" : "#D97706")} title={esReasignado(r) ? "Editar completo (reasignado)" : "Editar tipo"}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
                         {ops.map(function (op) {
                           return <button key={op.estado} onClick={function () { op.estado === "permanente" ? hardDeleteReporte(r.id) : abrirModalEstado(r, op.estado); }} style={BTN_ICO(op.bg, op.color)} title={op.label}>
                             {op.estado === "oculto" && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>}
@@ -450,6 +596,105 @@ function ModalBase(props) {
     </div>
   );
 }
+
+var TIPOS_HURTO_EC      = ["atraco", "raponazo", "cosquilleo", "fleteo"];
+var TIPOS_REPORTANTE_EC = ["victima", "testigo"];
+var FRANJAS_EC          = ["00:00-05:59", "06:00-11:59", "12:00-17:59", "18:00-23:59"];
+var OBJETOS_EC          = ["celular", "dinero", "tarjetas_documentos", "articulos_personales", "dispositivos_electronicos"];
+var NUM_AGRESORES_EC    = ["1", "2", "3+", "desconocido"];
+
+function ModalEditarCompleto({ reporte, onClose, onGuardado, onError }) {
+  var [form, setForm] = useState({
+    tipo_reportante:  reporte.tipo_reportante  || "",
+    fecha_incidente:  reporte.fecha_incidente  || "",
+    franja_horaria:   reporte.franja_horaria   || "",
+    tipo_hurto:       reporte.tipo_hurto       || "",
+    descripcion:      reporte.descripcion      || "",
+    objeto_hurtado:   reporte.objeto_hurtado   || "",
+    numero_agresores: reporte.numero_agresores || "",
+    barrio_ingresado: reporte.barrio_ingresado || "",
+    direccion:        reporte.direccion        || "",
+  });
+  var [guardando, setGuardando] = useState(false);
+
+  var handleChange = function (k, v) { setForm(function (f) { return { ...f, [k]: v }; }); };
+
+  var guardar = async function () {
+    var cambios = {};
+    for (var k of Object.keys(form)) {
+      if (form[k] !== (reporte[k] ?? "")) cambios[k] = form[k];
+    }
+    if (Object.keys(cambios).length === 0) { onError("No hay cambios para guardar"); return; }
+    setGuardando(true);
+    try {
+      var { default: api } = await import("../../services/api.js");
+      await api.patch("/api/admin/reportes/" + reporte.id + "/editar", cambios);
+      onGuardado();
+    } catch (e) {
+      onError(e.response?.data?.message || "Error al guardar");
+    } finally { setGuardando(false); }
+  };
+
+  var campoSel = function (label, key, opciones) {
+    return (
+      <div key={key} style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
+        <label style={{ fontSize: 11, color: "#64748B", fontWeight: 500 }}>{label}</label>
+        <select value={form[key]} onChange={function (e) { handleChange(key, e.target.value); }} style={S_EC_INPUT}>
+          <option value="">— sin cambio —</option>
+          {opciones.map(function (o) { return <option key={o} value={o}>{o}</option>; })}
+        </select>
+      </div>
+    );
+  };
+
+  var campoTexto = function (label, key, esTextarea) {
+    return (
+      <div key={key} style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
+        <label style={{ fontSize: 11, color: "#64748B", fontWeight: 500 }}>{label}</label>
+        {esTextarea
+          ? <textarea value={form[key]} onChange={function (e) { handleChange(key, e.target.value); }} style={{ ...S_EC_INPUT, height: 68, resize: "vertical" }} maxLength={300} />
+          : <input type={key === "fecha_incidente" ? "date" : "text"} value={form[key]} onChange={function (e) { handleChange(key, e.target.value); }} style={S_EC_INPUT} />
+        }
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div style={{ backgroundColor: "#fff", borderRadius: 12, width: "100%", maxWidth: 520, maxHeight: "88vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }} onClick={function (e) { e.stopPropagation(); }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px 14px", borderBottom: "1px solid #E2E8F0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter',sans-serif" }}>Editar reporte</h2>
+            <span style={{ padding: "2px 8px", borderRadius: 10, backgroundColor: "#EDE9FE", color: "#6D28D9", fontSize: 11, fontWeight: 600 }}>Reasignado</span>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "#64748B" }}>✕</button>
+        </div>
+        <div style={{ padding: "16px 20px" }}>
+          <p style={{ margin: "0 0 14px", fontSize: 12, color: "#64748B", backgroundColor: "#F8FAFC", padding: "8px 12px", borderRadius: 8 }}>
+            Reporte reasignado. Solo se envían los campos que modifiques.
+          </p>
+          {campoSel("Tipo reportante",  "tipo_reportante",  TIPOS_REPORTANTE_EC)}
+          {campoTexto("Fecha incidente", "fecha_incidente")}
+          {campoSel("Franja horaria",   "franja_horaria",   FRANJAS_EC)}
+          {campoSel("Tipo de hurto",    "tipo_hurto",       TIPOS_HURTO_EC)}
+          {campoSel("Objeto hurtado",   "objeto_hurtado",   OBJETOS_EC)}
+          {campoSel("N° agresores",     "numero_agresores", NUM_AGRESORES_EC)}
+          {campoTexto("Barrio",         "barrio_ingresado")}
+          {campoTexto("Dirección",      "direccion")}
+          {campoTexto("Descripción",    "descripcion",      true)}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "12px 20px 16px", borderTop: "1px solid #E2E8F0" }}>
+          <button onClick={onClose} disabled={guardando} style={{ padding: "9px 18px", borderRadius: 8, border: "1px solid #CBD5E1", backgroundColor: "#fff", color: "#64748B", cursor: "pointer", fontSize: 13 }}>Cancelar</button>
+          <button onClick={guardar} disabled={guardando} style={{ padding: "9px 18px", borderRadius: 8, border: "none", backgroundColor: "#2563EB", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+            {guardando ? "Guardando..." : "Guardar cambios"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+var S_EC_INPUT = { padding: "7px 10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13, color: "#1E293B", width: "100%", boxSizing: "border-box" };
 
 function Fila(props) {
   if (!props.valor) return null;
