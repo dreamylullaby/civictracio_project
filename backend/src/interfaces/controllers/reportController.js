@@ -59,6 +59,17 @@ class ReportController {
   /** GET /api/reportes/mapa */
   async getForMap(req, res) {
     try {
+      const { lat, lng, radio } = req.query;
+
+      // Si vienen coordenadas, filtrar por radio (en metros, default 500)
+      if (lat && lng) {
+        const latF   = parseFloat(lat);
+        const lngF   = parseFloat(lng);
+        const radioM = parseFloat(radio) || 500;
+        const result = await this.repository.findForMapByRadius(latF, lngF, radioM);
+        return res.status(200).json({ success: true, data: result });
+      }
+
       const result = await this.GetMapReportsUC.execute();
       return res.status(200).json({ success: true, data: result });
     } catch (error) {

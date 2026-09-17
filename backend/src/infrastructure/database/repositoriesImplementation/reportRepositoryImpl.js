@@ -189,14 +189,20 @@ export default class ReportRepositoryImpl extends ReportRepository {
 
   /**
    * Obtiene reportes activos con solo los campos necesarios para pintar el mapa.
+   * Sin filtro explícito: solo devuelve reportes del año en curso (modo tiempo real).
    * @returns {Promise<Array>} Lista reducida: id, latitud, longitud, tipo_hurto, franja_horaria, fecha_incidente, barrio_ingresado
    */
   async findForMap() {
+    const anioActual = new Date().getFullYear();
+    const fechaDesdeAnio = `${anioActual}-01-01`;
+
     const { data, error } = await supabase
       .from('reportes')
       .select('id, latitud, longitud, tipo_hurto, franja_horaria, fecha_incidente, barrio_ingresado, comuna')
       .eq('estado', 'activo')
-      .order('fecha_creacion', { ascending: false });
+      .gte('fecha_incidente', fechaDesdeAnio)
+      .order('fecha_creacion', { ascending: false })
+      .limit(50000);
 
     if (error) throw new Error(`Error al obtener reportes del mapa: ${error.message}`);
     return data;
@@ -214,7 +220,8 @@ export default class ReportRepositoryImpl extends ReportRepository {
       .select('id, latitud, longitud, tipo_hurto, franja_horaria, fecha_incidente, barrio_ingresado, comuna')
       .eq('estado', 'activo')
       .gt('fecha_creacion', desde)
-      .order('fecha_creacion', { ascending: false });
+      .order('fecha_creacion', { ascending: false })
+      .limit(50000);
 
     if (error) throw new Error(`Error al obtener reportes nuevos: ${error.message}`);
     return data;
@@ -246,7 +253,7 @@ export default class ReportRepositoryImpl extends ReportRepository {
     if (fechaDesde)             query = query.gte('fecha_incidente', fechaDesde);
     if (fechaHasta)             query = query.lte('fecha_incidente', fechaHasta);
 
-    const { data, error } = await query;
+    const { data, error } = await query.limit(50000);
     if (error) throw new Error(`Error al obtener reportes filtrados: ${error.message}`);
     return data;
   }
@@ -365,7 +372,7 @@ export default class ReportRepositoryImpl extends ReportRepository {
 
     if (zonaTipo) query = query.eq('zona_tipo', zonaTipo);
 
-    const { data, error } = await query;
+    const { data, error } = await query.limit(50000);
 
     if (error) throw new Error(`Error al obtener resumen: ${error.message}`);
 

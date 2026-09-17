@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -26,9 +27,27 @@ class UserRemoteDatasource {
       await AuthStorage.saveUserId(data["user"]["id"].toString());
       return UserModel.fromJson(data["user"]);
     } else {
-      print("Google login error - Status: ${response.statusCode}, Body: ${response.body}");
+      debugPrint("Google login error - Status: ${response.statusCode}, Body: ${response.body}");
       throw Exception("Error login Google: ${response.statusCode} - ${response.body}");
     }
+  }
+
+  /// Verifica si el usuario con ese idToken ya existe en la BD.
+  /// Retorna true si es usuario nuevo (debe ver T&C), false si ya existe.
+  Future<bool> verificarUsuarioGoogleNuevo({required String idToken}) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/google/check"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"idToken": idToken}),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data["esNuevo"] == true;
+      }
+    } catch (_) {}
+    // Si hay error de red, asumir usuario existente para no bloquear
+    return false;
   }
 
   Future<UserModel> register({required String username, required String correo, required String password}) async {

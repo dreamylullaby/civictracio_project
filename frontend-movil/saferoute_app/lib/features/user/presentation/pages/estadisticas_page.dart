@@ -95,9 +95,9 @@ class _EstadisticasPageState extends State<EstadisticasPage> {
               fechaDesde: _fechaDesde,
               fechaHasta: _fechaHasta,
               corregimientoId: _filtroCorregimiento != null ? int.parse(_filtroCorregimiento!) : null,
-              esRural: _modoRural ? true : null,
+              esRural: _modoRural ? true : false,
             )
-          : _ds.getResumenUsuario();
+          : _ds.getResumenUsuario(zonaTipo: _modoRural ? 'rural' : 'urbana');
 
       final results = await Future.wait([
         resumenFuture,

@@ -40,6 +40,7 @@ class _MapaPageState extends State<MapaPage> with WidgetsBindingObserver {
   late final InactivityService _inactivityService;
   StreamSubscription<LatLng>? _navSub;
   StreamSubscription<int>? _nuevosSub;
+  StreamSubscription<Position>? _posicionSub;
   LatLng? _userLocation;
   int _notifSinLeer = 0;
   Timer? _notifTimer;
@@ -102,6 +103,7 @@ class _MapaPageState extends State<MapaPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _navSub?.cancel();
     _nuevosSub?.cancel();
+    _posicionSub?.cancel();
     _notifTimer?.cancel();
     _notifier.dispose();
     _notifService.dispose();
@@ -132,8 +134,24 @@ class _MapaPageState extends State<MapaPage> with WidgetsBindingObserver {
       if (p == LocationPermission.denied || p == LocationPermission.deniedForever) return;
       final pos = await Geolocator.getCurrentPosition();
       if (!mounted) return;
-      setState(() => _userLocation = LatLng(pos.latitude, pos.longitude));
-      _mapController.move(_userLocation!, 14);
+      final loc = LatLng(pos.latitude, pos.longitude);
+      setState(() => _userLocation = loc);
+      _notifier.setUbicacionUsuario(loc);
+      _mapController.move(loc, 14);
+
+      // Suscribirse a actualizaciones de posición (umbral 50m para no saturar)
+      _posicionSub?.cancel();
+      _posicionSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 50, // metros mínimos de cambio para actualizar
+        ),
+      ).listen((p) {
+        if (!mounted) return;
+        final nueva = LatLng(p.latitude, p.longitude);
+        setState(() => _userLocation = nueva);
+        _notifier.setUbicacionUsuario(nueva);
+      });
     } catch (_) {}
   }
 
@@ -298,6 +316,8 @@ class _MapaPageState extends State<MapaPage> with WidgetsBindingObserver {
                           hayFiltros: notifier.hayFiltros,
                           conteoFiltros: notifier.conteoFiltros,
                           totalReportes: notifier.filtrados.length,
+                          totalEnBD: notifier.totalReportesEnBD,
+                          ubicacionActiva: notifier.ubicacionActiva,
                           onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
                           notificacionesSinLeer: _notifSinLeer,
                           onNotificacionesTap: () async {
