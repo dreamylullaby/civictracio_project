@@ -9,14 +9,7 @@ import '../../../../services/auth_storage.dart';
 import '../widgets/app_dropdown.dart';
 
 class MisReportesPage extends StatefulWidget {
-  const MisReportesPage({super.key, MisReportesDatasource? datasource})
-      : _datasource = datasource;
-
-  final MisReportesDatasource? _datasource;
-
-  MisReportesDatasource get datasource =>
-      _datasource ?? HttpMisReportesDatasource();
-
+  const MisReportesPage({super.key});
   @override
   State<MisReportesPage> createState() => _MisReportesPageState();
 }
@@ -128,22 +121,16 @@ class _MisReportesPageState extends State<MisReportesPage> {
 
   void _mostrarMensaje(String texto, {bool error = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          texto,
-          style: const TextStyle(fontWeight: FontWeight.w500),
-        ),
-        backgroundColor: error ? AppColors.hurtoAtraco : AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(texto, style: const TextStyle(fontWeight: FontWeight.w500)),
+      backgroundColor: error ? AppColors.hurtoAtraco : AppColors.primary,
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
   }
 
+  // ── Editar reporte (todos los campos) ──
   void _editarReporte(Map<String, dynamic> r) {
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => _EditarReportePage(
@@ -152,9 +139,10 @@ class _MisReportesPageState extends State<MisReportesPage> {
         onGuardado: () { _cargar(reset: true); _mostrarMensaje('Reporte actualizado'); },
         onError: (msg) => _mostrarMensaje(msg, error: true),
       ),
-    );
+    ));
   }
 
+  // ── Solicitar eliminación ──
   void _solicitarEliminacion(Map<String, dynamic> r) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final dialogBg = isDark ? const Color(0xFF1E293B) : Colors.white;
@@ -327,20 +315,22 @@ class _MisReportesPageState extends State<MisReportesPage> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: border, width: 0.5),
-              ),
+      decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(14), border: Border.all(color: border)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: border, width: 0.5))),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: tipoColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(99)),
+              child: Text(tipo.isNotEmpty ? '${tipo[0].toUpperCase()}${tipo.substring(1)}' : '', style: GoogleFonts.montserrat(fontSize: 12, fontWeight: FontWeight.w600, color: tipoColor)),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: estadoColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(99)),
+              child: Text(estado, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: estadoColor)),
             ),
             const Spacer(),
             Text(_fmtFecha(r['fecha_incidente'] as String?), style: GoogleFonts.inter(fontSize: 12, color: textS, fontWeight: FontWeight.w300)),
@@ -368,8 +358,6 @@ class _MisReportesPageState extends State<MisReportesPage> {
             Row(children: [
               _actionBtn(Icons.visibility_outlined, 'Ver', AppColors.primary, () => _verDetalle(r)),
               if (estado == 'activo') ...[
-                const SizedBox(width: 8),
-                _actionBtn(Icons.edit_outlined, 'Editar', const Color(0xFFD97706), () => _editarReporte(r)),
                 const SizedBox(width: 8),
                 _actionBtn(Icons.edit_outlined, 'Editar', const Color(0xFFD97706), () => _editarReporte(r)),
                 const SizedBox(width: 8),
