@@ -1,81 +1,97 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:civictrackio_app/features/user/presentation/pages/register_page.dart';
+import 'package:civictrackio_app/features/user/presentation/pages/register_Page.dart';
 
-class FakeUser {
-  FakeUser({required this.username});
-  final String username;
-}
-
-Widget buildTestable({
-  Future<dynamic> Function({
-    required String username,
-    required String correo,
-    required String password,
-  })? onRegister,
-}) {
+Widget buildTestable() {
   return MaterialApp(
     routes: {
       '/login': (_) => const Scaffold(
             body: Center(child: Text('Login Page')),
           ),
     },
-    home: RegisterPage(onRegister: onRegister),
+    home: const RegisterPage(),
   );
 }
 
 Future<void> llenarFormularioValido(WidgetTester tester) async {
   await tester.enterText(find.byType(TextFormField).at(0), 'Luna');
-  await tester.enterText(find.byType(TextFormField).at(1), 'luna@test.com');
-  await tester.enterText(find.byType(TextFormField).at(2), 'ClaveSegura123');
-  await tester.enterText(find.byType(TextFormField).at(3), 'ClaveSegura123');
+  await tester.enterText(find.byType(TextFormField).at(1), 'luna@gmail.com');
+  await tester.enterText(find.byType(TextFormField).at(2), 'ClaveSegura123!');
+  await tester.enterText(find.byType(TextFormField).at(3), 'ClaveSegura123!');
   await tester.pumpAndSettle();
 }
 
 Future<void> scrollHastaBoton(WidgetTester tester) async {
   await tester.scrollUntilVisible(
-    find.byKey(const Key('btn_registrarse')),
+    find.text('Registrarse'),
     200,
     scrollable: find.byType(Scrollable).first,
   );
   await tester.pumpAndSettle();
 }
 
+Future<void> scrollHastaTerminos(WidgetTester tester) async {
+  await tester.scrollUntilVisible(
+    find.byType(Checkbox),
+    200,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+}
+
+Future<void> tapEnlaceLegal(WidgetTester tester, String enlace) async {
+  final richTextFinder = find.byWidgetPredicate(
+    (widget) =>
+        widget is RichText &&
+        widget.text.toPlainText().contains(enlace),
+  );
+  expect(richTextFinder, findsOneWidget);
+
+  final richText = tester.widget<RichText>(richTextFinder);
+  TapGestureRecognizer? recognizer;
+
+  void buscarReconocedor(InlineSpan span) {
+    if (span is TextSpan) {
+      if (span.text == enlace && span.recognizer is TapGestureRecognizer) {
+        recognizer = span.recognizer as TapGestureRecognizer;
+      }
+      span.children?.forEach(buscarReconocedor);
+    }
+  }
+
+  buscarReconocedor(richText.text);
+  expect(recognizer, isNotNull);
+  recognizer!.onTap?.call();
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('HU-04 Unitarias Flutter - Términos y Condiciones', () {
     testWidgets('CP-HU04-F-01 bloquea registro si no acepta términos', (tester) async {
-      bool llamado = false;
-
-      await tester.pumpWidget(
-        buildTestable(
-          onRegister: ({
-            required String username,
-            required String correo,
-            required String password,
-          }) async {
-            llamado = true;
-            return FakeUser(username: username);
-          },
-        ),
-      );
+      await tester.pumpWidget(buildTestable());
 
       await tester.pumpAndSettle();
       await llenarFormularioValido(tester);
       await scrollHastaBoton(tester);
 
-      await tester.tap(find.byKey(const Key('btn_registrarse')));
+      await tester.tap(find.text('Registrarse'));
       await tester.pumpAndSettle();
 
-      expect(llamado, false);
+      expect(
+        find.text(
+          'Debes aceptar los Términos y Condiciones y la Política de Privacidad para registrarte.',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('CP-HU04-F-02 abre modal de Términos y Condiciones', (tester) async {
       await tester.pumpWidget(buildTestable());
       await tester.pumpAndSettle();
-      await scrollHastaBoton(tester);
+      await scrollHastaTerminos(tester);
 
-      await tester.tap(find.byKey(const Key('link_terminos')));
-      await tester.pumpAndSettle();
+      await tapEnlaceLegal(tester, 'Términos y Condiciones');
 
       expect(find.byType(Dialog), findsOneWidget);
       expect(find.text('Términos y Condiciones'), findsWidgets);
@@ -84,10 +100,9 @@ void main() {
     testWidgets('CP-HU04-F-03 abre modal de Política de Privacidad', (tester) async {
       await tester.pumpWidget(buildTestable());
       await tester.pumpAndSettle();
-      await scrollHastaBoton(tester);
+      await scrollHastaTerminos(tester);
 
-      await tester.tap(find.byKey(const Key('link_privacidad')));
-      await tester.pumpAndSettle();
+      await tapEnlaceLegal(tester, 'Política de Privacidad');
 
       expect(find.byType(Dialog), findsOneWidget);
       expect(find.text('Política de Privacidad'), findsWidgets);

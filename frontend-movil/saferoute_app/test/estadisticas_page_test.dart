@@ -53,7 +53,7 @@ class FakeEstadisticasDatasource extends EstadisticasDatasource {
   int? ultimoTop;
 
   @override
-  Future<Map<String, dynamic>> getResumenUsuario() async {
+  Future<Map<String, dynamic>> getResumenUsuario({String zonaTipo = 'urbana'}) async {
     llamadasResumenUsuario++;
     if (onGetResumenUsuario != null) return await onGetResumenUsuario!();
     return {
@@ -173,15 +173,11 @@ Finder exactText(String value) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(() async {
-    await dotenv.load(
-      fileName: '.env',
-      isOptional: true,
-      mergeWith: {
-        'MAPBOX_TOKEN': 'test-mapbox-token',
-        'API_BASE_URL': 'http://localhost:3000',
-      },
-    );
+  setUpAll(() {
+    dotenv.loadFromString(envString: '''
+API_BASE_URL=http://localhost:3000
+MAPBOX_TOKEN=test-mapbox-token
+''');
   });
 
   group('HU-11 EstadisticasPage', () {

@@ -39,12 +39,10 @@ Widget buildResetPasswordTestApp({String token = 'token-valido'}) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(() async {
-    await dotenv.load(
-      fileName: '.env',
-      isOptional: true,
-      mergeWith: {'API_BASE_URL': 'http://localhost:3000'},
-    );
+  setUpAll(() {
+    dotenv.loadFromString(envString: '''
+API_BASE_URL=http://localhost:3000
+''');
   });
 
   group('HU-13 Pruebas Integrales Flutter Móvil', () {

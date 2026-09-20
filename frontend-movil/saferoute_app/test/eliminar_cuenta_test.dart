@@ -16,13 +16,9 @@ void main() {
       'token_timestamp': DateTime.now().millisecondsSinceEpoch,
     });
 
-    await dotenv.load(
-      fileName: '.env',
-      isOptional: true,
-      mergeWith: {
-        'API_BASE_URL': 'http://localhost:3000',
-      },
-    );
+    dotenv.loadFromString(envString: '''
+API_BASE_URL=http://localhost:3000
+''');
   });
 
   group('HU-21 Unitarias Flutter - PerfilDatasource.eliminarCuenta', () {

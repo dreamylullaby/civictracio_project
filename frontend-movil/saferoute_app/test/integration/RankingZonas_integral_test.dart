@@ -57,16 +57,11 @@ Finder findExactTextData(String value, {String? description}) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(() async {
-    await dotenv.load(
-      fileName: '.env',
-      isOptional: true,
-      mergeWith: {
-        'MAPBOX_TOKEN':
-            'pk.eyJ1Ijoic2FyYWhjYWxkZXJvbiIsImEiOiJjbW5tcGp6NW8xbnRtMnJxNDUwODJibnJtIn0.AVoo31Ev683L4GnZFj3qgQ',
-        'API_BASE_URL': 'http://localhost:3000',
-      },
-    );
+  setUpAll(() {
+    dotenv.loadFromString(envString: '''
+API_BASE_URL=http://localhost:3000
+MAPBOX_TOKEN=test-mapbox-token
+''');
   });
 
   group('HU-12 RankingZonasPage', () {
