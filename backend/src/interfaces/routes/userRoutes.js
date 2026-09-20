@@ -5,7 +5,7 @@
  */
 import express from "express";
 import rateLimit from "express-rate-limit";
-import { loginLocal, loginGoogle, registerLocal, loginAdmin, logoutUser, updateUsername, updateFcmToken, forgotPassword, resetPassword, getTerminos } from "../controllers/userController.js";
+import { loginLocal, loginGoogle, checkGoogleUser, registerLocal, loginAdmin, logoutUser, updateUsername, updateFcmToken, forgotPassword, resetPassword, getTerminos } from "../controllers/userController.js";
 import { authenticate, requireAdmin } from "../middlewares/auth.js";
 
 const router = express.Router();
@@ -30,6 +30,9 @@ router.post("/login", loginLocal);
 
 /** POST /api/auth/google — Login o registro con Google (Firebase idToken) */
 router.post("/google", loginGoogle);
+
+/** POST /api/auth/google/check — Verifica si el usuario Google ya existe (sin crear) */
+router.post("/google/check", checkGoogleUser);
 
 /** POST /api/auth/admin-login — Login exclusivo para administradores */
 router.post("/admin-login", loginAdmin);

@@ -419,86 +419,32 @@ class _MisReportesPageState extends State<MisReportesPage> {
     final textS = isDark ? const Color(0xFF94A3B8) : AppColors.textSub;
     final sheetBg = isDark ? const Color(0xFF1E293B) : Colors.white;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: sheetBg,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.4,
-          maxChildSize: 0.9,
-          expand: false,
-          builder: (_, sc) {
-            return ListView(
-              controller: sc,
-              padding: const EdgeInsets.all(20),
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Detalle del reporte',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: textM,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _detRow('Tipo', _capitalizar(r['tipo_hurto'] as String?), textM, textS),
-                _detRow('Estado', r['estado'] ?? '—', textM, textS),
-                _detRow('Fecha', _fmtFecha(r['fecha_incidente'] as String?), textM, textS),
-                _detRow('Franja', r['franja_horaria'] ?? '—', textM, textS),
-                _detRow('Barrio', r['barrio_ingresado'] ?? '—', textM, textS),
-                _detRow(
-                  'Comuna',
-                  r['comuna'] != null ? 'Comuna ${r['comuna']}' : '—',
-                  textM,
-                  textS,
-                ),
-                _detRow('Objeto hurtado', r['objeto_hurtado'] ?? '—', textM, textS),
-                _detRow(
-                  'N° agresores',
-                  '${r['numero_agresores'] ?? '—'}',
-                  textM,
-                  textS,
-                ),
-                if (r['descripcion'] != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'Descripción',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: textM,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    r['descripcion'],
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      color: textS,
-                      height: 1.5,
-                    ),
-                  ),
-                ],
-              ],
-            );
-          },
-        );
-      },
-    );
+    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: sheetBg, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))), builder: (ctx) {
+      return DraggableScrollableSheet(initialChildSize: 0.7, minChildSize: 0.4, maxChildSize: 0.9, expand: false, builder: (_, sc) {
+        return ListView(controller: sc, padding: const EdgeInsets.all(20), children: [
+          Row(children: [
+            Text('Detalle del reporte', style: GoogleFonts.montserrat(fontSize: 18, fontWeight: FontWeight.bold, color: textM)),
+            const Spacer(),
+            IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+          ]),
+          const SizedBox(height: 16),
+          _detRow('Tipo', r['tipo_hurto'] != null ? '${(r['tipo_hurto'] as String)[0].toUpperCase()}${(r['tipo_hurto'] as String).substring(1)}' : 'No registra', textM, textS),
+          _detRow('Estado', r['estado'] ?? 'No registra', textM, textS),
+          _detRow('Fecha', _fmtFecha(r['fecha_incidente'] as String?), textM, textS),
+          _detRow('Franja', r['franja_horaria'] ?? 'No registra', textM, textS),
+          _detRow('Barrio', r['barrio_ingresado'] ?? 'No registra', textM, textS),
+          _detRow('Comuna', r['comuna'] != null ? 'Comuna ${r['comuna']}' : 'No registra', textM, textS),
+          _detRow('Objeto hurtado', r['objeto_hurtado'] ?? 'No registra', textM, textS),
+          _detRow('N° agresores', r['numero_agresores'] ?? 'No registra', textM, textS),
+          if (r['descripcion'] != null) ...[
+            const SizedBox(height: 12),
+            Text('Descripción', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: textM)),
+            const SizedBox(height: 4),
+            Text(r['descripcion'], style: GoogleFonts.inter(fontSize: 13, color: textS, height: 1.5)),
+          ],
+        ]);
+      });
+    });
   }
 
   Widget _detRow(String label, String value, Color textM, Color textS) {
@@ -628,144 +574,58 @@ class _MisReportesPageState extends State<MisReportesPage> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: border, width: 0.5),
-              ),
+      decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(14), border: Border.all(color: border)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: border, width: 0.5))),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: tipoColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(99)),
+              child: Text(tipo.isNotEmpty ? '${tipo[0].toUpperCase()}${tipo.substring(1)}' : '', style: GoogleFonts.montserrat(fontSize: 12, fontWeight: FontWeight.w600, color: tipoColor)),
             ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: tipoColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    tipo.isNotEmpty ? _capitalizar(tipo) : '',
-                    style: GoogleFonts.montserrat(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: tipoColor,
-                    ),
-                  ),
-                ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: estadoColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(99)),
+              child: Text(estado, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: estadoColor)),
+            ),
+            const Spacer(),
+            Text(_fmtFecha(r['fecha_incidente'] as String?), style: GoogleFonts.inter(fontSize: 12, color: textS, fontWeight: FontWeight.w300)),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Icon(Icons.location_on_outlined, size: 16, color: textS),
+              const SizedBox(width: 6),
+              Expanded(child: Text('${r['barrio_ingresado'] ?? '—'}${r['comuna'] != null ? ' · Comuna ${r['comuna']}' : ''}', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500, color: textM))),
+            ]),
+            const SizedBox(height: 6),
+            Row(children: [
+              Icon(Icons.access_time, size: 16, color: textS),
+              const SizedBox(width: 6),
+              Text(r['franja_horaria'] ?? 'No registra', style: GoogleFonts.inter(fontSize: 12, color: textS)),
+            ]),
+            if (r['descripcion'] != null && (r['descripcion'] as String).isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(r['descripcion'], style: GoogleFonts.inter(fontSize: 12, color: textS, fontWeight: FontWeight.w300), maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
+            const SizedBox(height: 12),
+            Row(children: [
+              _actionBtn(Icons.visibility_outlined, 'Ver', AppColors.primary, () => _verDetalle(r)),
+              if (estado == 'activo') ...[
                 const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: estadoColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    estado,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: estadoColor,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  _fmtFecha(r['fecha_incidente'] as String?),
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: textS,
-                    fontWeight: FontWeight.w300,
-                  ),
-                ),
+                _actionBtn(Icons.edit_outlined, 'Editar', const Color(0xFFD97706), () => _editarReporte(r)),
+                const SizedBox(width: 8),
+                _actionBtn(Icons.delete_outline, 'Eliminar', AppColors.hurtoAtraco, () => _solicitarEliminacion(r)),
               ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.location_on_outlined, size: 16, color: textS),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        '${r['barrio_ingresado'] ?? '—'}${r['comuna'] != null ? ' · Comuna ${r['comuna']}' : ''}',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: textM,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Icon(Icons.access_time, size: 16, color: textS),
-                    const SizedBox(width: 6),
-                    Text(
-                      r['franja_horaria'] ?? '',
-                      style: GoogleFonts.inter(fontSize: 12, color: textS),
-                    ),
-                  ],
-                ),
-                if (r['descripcion'] != null &&
-                    (r['descripcion'] as String).isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    r['descripcion'],
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: textS,
-                      fontWeight: FontWeight.w300,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _actionBtn(
-                      Icons.visibility_outlined,
-                      'Ver',
-                      AppColors.primary,
-                      () => _verDetalle(r),
-                    ),
-                    if (estado == 'activo') ...[
-                      const SizedBox(width: 8),
-                      _actionBtn(
-                        Icons.edit_outlined,
-                        'Editar',
-                        const Color(0xFFD97706),
-                        () => _editarReporte(r),
-                      ),
-                      const SizedBox(width: 8),
-                      _actionBtn(
-                        Icons.delete_outline,
-                        'Eliminar',
-                        AppColors.hurtoAtraco,
-                        () => _solicitarEliminacion(r),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+            ]),
+          ]),
+        ),
+      ]),
     );
   }
 

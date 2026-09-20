@@ -8,10 +8,9 @@ import admin from "firebase-admin";
 import fs from "fs";
 
 try {
+  const keyPath = process.env.FIREBASE_KEY_PATH || new URL("../../config/firebase-key.json", import.meta.url);
   const serviceAccount = JSON.parse(
-    fs.readFileSync(
-      new URL("../../config/firebase-key.json", import.meta.url)
-    )
+    fs.readFileSync(keyPath)
   );
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)

@@ -330,6 +330,41 @@ export const logoutUser = (req, res) => {
 };
 
 /**
+ * Maneja POST /api/auth/google/check
+ * Verifica si el google_id del token ya existe en la BD sin crear usuario.
+ * Usado por el cliente para saber si debe mostrar el diálogo de T&C.
+ * @param {import('express').Request} req - Body: { idToken }
+ * @param {import('express').Response} res - { esNuevo: boolean }
+ */
+export const checkGoogleUser = async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) return res.status(400).json({ message: 'idToken requerido' });
+
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const { uid, email } = decodedToken;
+
+    const { data: byUid } = await db
+      .from('usuarios')
+      .select('id')
+      .eq('google_id', uid)
+      .maybeSingle();
+
+    if (byUid) return res.json({ esNuevo: false });
+
+    const { data: byEmail } = await db
+      .from('usuarios')
+      .select('id')
+      .eq('correo', email)
+      .maybeSingle();
+
+    return res.json({ esNuevo: !byEmail });
+  } catch (error) {
+    return res.status(401).json({ message: 'Token inválido', detail: error.message });
+  }
+};
+
+/**
  * Maneja POST /api/auth/google
  * Autentica o registra un usuario mediante Google Sign-In.
  * Verifica el idToken con Firebase Admin y crea el usuario si no existe.
@@ -392,6 +427,17 @@ export const loginGoogle = async (req, res) => {
 
         if (error) throw error;
         user = newUser;
+
+        // Registrar aceptación de T&C (se valida en el cliente antes de llegar aquí)
+        const ipOrigen = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+          || req.socket?.remoteAddress
+          || null;
+        const { error: tcError } = await db.from("aceptacion_terminos").insert({
+          usuario_id:       newUser.id,
+          version_terminos: 'v1.0',
+          ip_origen:        ipOrigen,
+        });
+        if (tcError) console.warn('[T&C] Error al registrar aceptación:', tcError.message);
       }
     }
 

@@ -6,7 +6,6 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../../core/app_theme.dart';
 import '../../../../../core/app_dialog.dart';
 import '../widgets/input_Field.dart';
@@ -86,31 +85,45 @@ class _LoginPageState extends State<LoginPage> {
           return; // El usuario canceló
         }
 
-        // Verificar si ya aceptó T&C antes (por email)
-        final prefs = await SharedPreferences.getInstance();
-        final yaAcepto = prefs.getBool('tc_accepted_${googleUser.email}') ?? false;
-
-        if (!yaAcepto) {
-          // Mostrar diálogo de T&C
-          setState(() => isLoading = false);
-          final acepta = await _mostrarDialogoTerminos();
-          if (acepta != true) return;
-          setState(() => isLoading = true);
-          // Guardar que aceptó
-          await prefs.setBool('tc_accepted_${googleUser.email}', true);
-        }
-
+        // Verificar si el usuario existe en el backend ANTES de mostrar T&C
+        // Hacemos un pre-check con el idToken para saber si es usuario nuevo
         final googleAuth = await googleUser.authentication;
         final credential = GoogleAuthProvider.credential(
           accessToken: googleAuth.accessToken,
           idToken: googleAuth.idToken,
         );
-        userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+        final tempCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+        final idToken = await tempCredential.user!.getIdToken();
+
+        final datasource = UserRemoteDatasource();
+        final esNuevo = await datasource.verificarUsuarioGoogleNuevo(idToken: idToken!);
+
+        if (esNuevo) {
+          // Usuario nuevo → mostrar T&C obligatorio
+          setState(() => isLoading = false);
+          final acepta = await _mostrarDialogoTerminos();
+          if (acepta != true) {
+            // Canceló → cerrar sesión de Firebase y salir
+            await FirebaseAuth.instance.signOut();
+            return;
+          }
+          setState(() => isLoading = true);
+        }
+
+        // Refrescar idToken por si el usuario tardó leyendo el T&C
+        final idTokenFinal = await tempCredential.user!.getIdToken(true) ?? idToken;
+
+        userCredential = tempCredential;
+        await datasource.loginWithGoogle(idToken: idTokenFinal);
+        datasource.registrarFcmToken();
+
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, '/home');
+        return;
       }
 
       final idToken = await userCredential.user!.getIdToken();
       final datasource = UserRemoteDatasource();
-
       await datasource.loginWithGoogle(idToken: idToken!);
       datasource.registrarFcmToken();
 
