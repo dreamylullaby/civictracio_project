@@ -1,0 +1,7 @@
+[build]
+  base = "frontend-web/dashboard"
+  command = "npm install --include=optional && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"

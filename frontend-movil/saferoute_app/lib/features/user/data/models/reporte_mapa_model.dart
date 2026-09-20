@@ -23,20 +23,25 @@ class ReporteMapaModel {
 
   factory ReporteMapaModel.fromJson(Map<String, dynamic> json) {
     return ReporteMapaModel(
-      id:              json['id'] as String,
+      id:              json['id']?.toString() ?? '',
       latitud:         (json['latitud'] as num).toDouble(),
       longitud:        (json['longitud'] as num).toDouble(),
-      tipoHurto:       json['tipo_hurto'] as String,
-      franjaHoraria:   json['franja_horaria'] as String,
-      fechaIncidente:  json['fecha_incidente'] as String,
-      barrioIngresado: json['barrio_ingresado'] as String,
-      comuna:          json['comuna'] as int?,
+      // Datos migrados pueden tener campos nulos — usamos fallback seguros
+      tipoHurto:       json['tipo_hurto']?.toString()      ?? 'otro',
+      franjaHoraria:   json['franja_horaria']?.toString()  ?? '',
+      fechaIncidente:  json['fecha_incidente']?.toString() ?? '',
+      barrioIngresado: json['barrio_ingresado']?.toString() ?? '',
+      comuna:          json['comuna'] != null ? (json['comuna'] as num).toInt() : null,
     );
   }
 
-  /// Retorna null si el reporte no tiene coordenadas (no se puede pintar en el mapa)
+  /// Retorna null si el reporte no tiene coordenadas válidas o si hay error de parseo.
   static ReporteMapaModel? tryFromJson(Map<String, dynamic> json) {
     if (json['latitud'] == null || json['longitud'] == null) return null;
-    return ReporteMapaModel.fromJson(json);
+    try {
+      return ReporteMapaModel.fromJson(json);
+    } catch (_) {
+      return null;
+    }
   }
 }

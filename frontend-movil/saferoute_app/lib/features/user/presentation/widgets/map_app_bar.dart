@@ -12,6 +12,8 @@ class MapAppBar extends StatelessWidget {
     required this.onMenuTap,
     this.notificacionesSinLeer = 0,
     this.onNotificacionesTap,
+    this.totalEnBD,
+    this.ubicacionActiva = false,
   });
 
   final bool hayFiltros;
@@ -20,6 +22,8 @@ class MapAppBar extends StatelessWidget {
   final VoidCallback onMenuTap;
   final int notificacionesSinLeer;
   final VoidCallback? onNotificacionesTap;
+  final int? totalEnBD;
+  final bool ubicacionActiva;
 
   @override
   Widget build(BuildContext context) {
@@ -86,10 +90,24 @@ class MapAppBar extends StatelessWidget {
                       color: AppColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Text('$totalReportes reportes',
-                        style: GoogleFonts.inter(
-                            fontSize: 11, fontWeight: FontWeight.w600,
-                            color: AppColors.primary)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (ubicacionActiva)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Icon(Icons.radar, size: 11, color: AppColors.primary),
+                          ),
+                        Text(
+                          ubicacionActiva && totalEnBD != null
+                              ? '$totalReportes / $totalEnBD'
+                              : '$totalReportes reportes',
+                          style: GoogleFonts.inter(
+                              fontSize: 11, fontWeight: FontWeight.w600,
+                              color: AppColors.primary),
+                        ),
+                      ],
+                    ),
                   ),
                 ]),
               ),

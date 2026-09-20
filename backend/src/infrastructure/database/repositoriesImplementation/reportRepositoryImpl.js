@@ -189,14 +189,20 @@ export default class ReportRepositoryImpl extends ReportRepository {
 
   /**
    * Obtiene reportes activos con solo los campos necesarios para pintar el mapa.
+   * Sin filtro explícito: solo devuelve reportes del año en curso (modo tiempo real).
    * @returns {Promise<Array>} Lista reducida: id, latitud, longitud, tipo_hurto, franja_horaria, fecha_incidente, barrio_ingresado
    */
   async findForMap() {
+    const anioActual = new Date().getFullYear();
+    const fechaDesdeAnio = `${anioActual}-01-01`;
+
     const { data, error } = await supabase
       .from('reportes')
       .select('id, latitud, longitud, tipo_hurto, franja_horaria, fecha_incidente, barrio_ingresado, comuna')
       .eq('estado', 'activo')
-      .order('fecha_creacion', { ascending: false });
+      .gte('fecha_incidente', fechaDesdeAnio)
+      .order('fecha_creacion', { ascending: false })
+      .limit(50000);
 
     if (error) throw new Error(`Error al obtener reportes del mapa: ${error.message}`);
     return data;
@@ -214,7 +220,8 @@ export default class ReportRepositoryImpl extends ReportRepository {
       .select('id, latitud, longitud, tipo_hurto, franja_horaria, fecha_incidente, barrio_ingresado, comuna')
       .eq('estado', 'activo')
       .gt('fecha_creacion', desde)
-      .order('fecha_creacion', { ascending: false });
+      .order('fecha_creacion', { ascending: false })
+      .limit(50000);
 
     if (error) throw new Error(`Error al obtener reportes nuevos: ${error.message}`);
     return data;
@@ -246,7 +253,7 @@ export default class ReportRepositoryImpl extends ReportRepository {
     if (fechaDesde)             query = query.gte('fecha_incidente', fechaDesde);
     if (fechaHasta)             query = query.lte('fecha_incidente', fechaHasta);
 
-    const { data, error } = await query;
+    const { data, error } = await query.limit(50000);
     if (error) throw new Error(`Error al obtener reportes filtrados: ${error.message}`);
     return data;
   }
@@ -275,6 +282,17 @@ export default class ReportRepositoryImpl extends ReportRepository {
     const from = (page - 1) * limit;
     const to   = from + limit - 1;
 
+    // Si hay búsqueda por username, resolver los IDs de usuarios que coinciden primero
+    let userIdsFromSearch = null;
+    if (busqueda) {
+      const term = busqueda.toLowerCase().trim();
+      const { data: users } = await supabase
+        .from('usuarios')
+        .select('id')
+        .ilike('username', `%${term}%`);
+      userIdsFromSearch = users ? users.map(u => u.id) : [];
+    }
+
     let query = supabase
       .from('reportes')
       .select('id, tipo_hurto, tipo_reportante, franja_horaria, fecha_incidente, barrio_ingresado, comuna, estado, fecha_creacion, descripcion, objeto_hurtado, numero_agresores, latitud, longitud, zona_tipo, corregimiento_id, usuario_id', { count: 'exact' })
@@ -292,7 +310,20 @@ export default class ReportRepositoryImpl extends ReportRepository {
     if (zona_tipo)        query = query.eq('zona_tipo', zona_tipo);
     if (corregimiento_id) query = query.eq('corregimiento_id', Number(corregimiento_id));
 
-    // Paginar DESPUÉS de filtrar
+    // Filtro por búsqueda: aplicar en BD antes de paginar
+    if (busqueda) {
+      const term = busqueda.toLowerCase().trim();
+      // Buscar por barrio (ilike en BD) O por usuario_id si hay coincidencias de username
+      const barrioFilter = `barrio_ingresado.ilike.%${term}%`;
+      if (userIdsFromSearch && userIdsFromSearch.length > 0) {
+        const uidsFilter = userIdsFromSearch.map(id => `usuario_id.eq.${id}`).join(',');
+        query = query.or(`${barrioFilter},${uidsFilter}`);
+      } else {
+        query = query.ilike('barrio_ingresado', `%${term}%`);
+      }
+    }
+
+    // Paginar DESPUÉS de todos los filtros
     query = query.range(from, to);
 
     const { data, error, count } = await query;
@@ -306,42 +337,28 @@ export default class ReportRepositoryImpl extends ReportRepository {
     let corrMap = {};
 
     if (userIds.length > 0) {
-      const { data: users } = await supabase.from('usuarios').select('id, username').in('id', userIds);
-      if (users) users.forEach(u => { userMap[u.id] = u.username; });
+      const { data: users } = await supabase.from('usuarios').select('id, username, estado').in('id', userIds);
+      if (users) users.forEach(u => { userMap[u.id] = { username: u.username, estado: u.estado }; });
     }
     if (corrIds.length > 0) {
       const { data: corrs } = await supabase.from('corregimientos').select('id, nombre').in('id', corrIds);
       if (corrs) corrs.forEach(c => { corrMap[c.id] = c.nombre; });
     }
 
-    const enriched = data.map(r => ({
-      ...r,
-      username: userMap[r.usuario_id] || null,
-      corregimiento_nombre: corrMap[r.corregimiento_id] || null,
-    }));
+    const enriched = data.map(r => {
+      const userInfo = userMap[r.usuario_id];
+      // propietario_no_existe: usuario_id presente pero no hay fila en usuarios (hard delete sin FK SET DEFAULT)
+      const propietarioNoExiste = r.usuario_id && !userInfo;
+      return {
+        ...r,
+        username:             userInfo?.username || null,
+        propietario_estado:   userInfo?.estado   || null,
+        propietario_no_existe: propietarioNoExiste,
+        corregimiento_nombre: corrMap[r.corregimiento_id] || null,
+      };
+    });
 
-    // Filtrar por búsqueda: solo por zona (comuna/corregimiento) y usuario
-    // Usa coincidencia de palabras completas (startsWith o match exacto de número)
-    let filtered = enriched;
-    if (busqueda) {
-      const term = busqueda.toLowerCase().trim();
-      filtered = enriched.filter(r => {
-        const username = (r.username || '').toLowerCase();
-        const corr = (r.corregimiento_nombre || '').toLowerCase();
-        const comuna = r.comuna ? String(r.comuna) : '';
-
-        // Coincidencia por palabra: username empieza con el término o contiene la palabra
-        const matchUser = username.split(/\s+/).some(w => w.startsWith(term)) || username === term;
-        // Coincidencia por comuna: número exacto
-        const matchComuna = comuna === term || ('comuna ' + comuna).startsWith(term);
-        // Coincidencia por corregimiento: alguna palabra empieza con el término
-        const matchCorr = corr.split(/\s+/).some(w => w.startsWith(term));
-
-        return matchUser || matchComuna || matchCorr;
-      });
-    }
-
-    return { data: filtered, total: busqueda ? filtered.length : count, page, totalPages: Math.ceil((busqueda ? filtered.length : count) / limit) };
+    return { data: enriched, total: count, page, totalPages: Math.ceil(count / limit) };
   }
 
   /**
@@ -355,7 +372,7 @@ export default class ReportRepositoryImpl extends ReportRepository {
 
     if (zonaTipo) query = query.eq('zona_tipo', zonaTipo);
 
-    const { data, error } = await query;
+    const { data, error } = await query.limit(50000);
 
     if (error) throw new Error(`Error al obtener resumen: ${error.message}`);
 
@@ -509,18 +526,34 @@ export default class ReportRepositoryImpl extends ReportRepository {
   }
 
   /**
-   * Obtiene todos los reportes de un usuario específico.
+   * Obtiene los reportes de un usuario con paginación.
+   * @param {string} usuarioId
+   * @param {number} page - página (1-based)
+   * @param {number} limit - registros por página
    */
-  async findByUsuario(usuarioId) {
+  async findByUsuario(usuarioId, page = 1, limit = 10) {
+    const from = (page - 1) * limit;
+    const to   = from + limit - 1;
+
+    // Contar por separado para evitar problemas con joins y count exact
+    const { count, error: countError } = await supabase
+      .from('reportes')
+      .select('id', { count: 'exact', head: true })
+      .eq('usuario_id', usuarioId)
+      .neq('estado', 'eliminado');
+
+    if (countError) throw new Error(`Error al contar reportes: ${countError.message}`);
+
     const { data, error } = await supabase
       .from('reportes')
       .select('*, zonas(barrio)')
       .eq('usuario_id', usuarioId)
       .neq('estado', 'eliminado')
-      .order('fecha_creacion', { ascending: false });
+      .order('fecha_creacion', { ascending: false })
+      .range(from, to);
 
     if (error) throw new Error(`Error al obtener reportes del usuario: ${error.message}`);
-    return data;
+    return { data, total: count, page, totalPages: Math.ceil(count / limit) };
   }
 
   /**

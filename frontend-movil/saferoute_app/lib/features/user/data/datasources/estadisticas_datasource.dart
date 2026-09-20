@@ -82,9 +82,12 @@ class EstadisticasDatasource {
   }
 
   /// Construye un resumen a partir de los datos del mapa (disponible para usuarios normales).
-  /// Usa GET /api/reportes/mapa que retorna: id, latitud, longitud, tipo_hurto, franja_horaria, fecha_incidente, barrio_ingresado, comuna
-  Future<Map<String, dynamic>> getResumenUsuario() async {
-    final uri = Uri.parse('$_base/mapa');
+  /// Usa GET /api/reportes/mapa/filtros?zonaTipo= para separar urbano/rural correctamente.
+  /// [zonaTipo]: 'urbana' | 'rural' — por defecto 'urbana'.
+  Future<Map<String, dynamic>> getResumenUsuario({String zonaTipo = 'urbana'}) async {
+    final uri = Uri.parse('$_base/mapa/filtros').replace(
+      queryParameters: {'zonaTipo': zonaTipo},
+    );
     final response = await http.get(uri, headers: await _headers);
     if (response.statusCode == 200) {
       final body = jsonDecode(response.body);
@@ -94,6 +97,7 @@ class EstadisticasDatasource {
       final porComuna = <String, int>{};
       final porFranja = <String, int>{};
       final porFecha = <String, int>{};
+      final porCorregimiento = <String, int>{};
       final porEstado = <String, int>{'activo': total};
       for (final r in reportes) {
         final tipo = r['tipo_hurto'] as String?;
@@ -105,7 +109,15 @@ class EstadisticasDatasource {
         if (franja != null) porFranja[franja] = (porFranja[franja] ?? 0) + 1;
         if (fecha != null) porFecha[fecha] = (porFecha[fecha] ?? 0) + 1;
       }
-      return { 'total': total, 'porTipo': porTipo, 'porComuna': porComuna, 'porFranja': porFranja, 'porFecha': porFecha, 'porEstado': porEstado };
+      return {
+        'total': total,
+        'porTipo': porTipo,
+        'porComuna': porComuna,
+        'porFranja': porFranja,
+        'porFecha': porFecha,
+        'porCorregimiento': porCorregimiento,
+        'porEstado': porEstado,
+      };
     }
     throw Exception('Error al obtener datos del mapa');
   }
@@ -126,8 +138,10 @@ class EstadisticasDatasource {
     if (tipos != null && tipos.isNotEmpty) params['tipos'] = tipos.join(',');
     if (fechaDesde != null) params['fechaDesde'] = fechaDesde;
     if (fechaHasta != null) params['fechaHasta'] = fechaHasta;
-    if (corregimientoId != null) params['corregimiento_id'] = corregimientoId.toString();
-    if (esRural != null) params['es_rural'] = esRural.toString();
+    if (corregimientoId != null) params['corregimientos'] = corregimientoId.toString();
+    // zonaTipo: el backend espera 'urbana' o 'rural', no 'es_rural'
+    if (esRural == true) params['zonaTipo'] = 'rural';
+    if (esRural == false) params['zonaTipo'] = 'urbana';
 
     final uri = Uri.parse('$_base/mapa/filtros').replace(queryParameters: params);
     final response = await http.get(uri, headers: await _headers);
@@ -139,6 +153,7 @@ class EstadisticasDatasource {
       final porComuna = <String, int>{};
       final porFranja = <String, int>{};
       final porFecha = <String, int>{};
+      final porCorregimiento = <String, int>{};
       for (final r in reportes) {
         final tipo = r['tipo_hurto'] as String?;
         final comuna = r['comuna']?.toString();
@@ -149,7 +164,15 @@ class EstadisticasDatasource {
         if (franja != null) porFranja[franja] = (porFranja[franja] ?? 0) + 1;
         if (fecha != null) porFecha[fecha] = (porFecha[fecha] ?? 0) + 1;
       }
-      return { 'total': total, 'porTipo': porTipo, 'porComuna': porComuna, 'porFranja': porFranja, 'porFecha': porFecha, 'porEstado': {'activo': total} };
+      return {
+        'total': total,
+        'porTipo': porTipo,
+        'porComuna': porComuna,
+        'porFranja': porFranja,
+        'porFecha': porFecha,
+        'porCorregimiento': porCorregimiento,
+        'porEstado': {'activo': total},
+      };
     }
     throw Exception('Error al obtener datos filtrados');
   }

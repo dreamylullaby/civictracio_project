@@ -144,7 +144,12 @@ class _MisReportesDatasourceFactory implements MisReportesDatasource {
 
 class _MisReportesPageState extends State<MisReportesPage> {
   bool _cargando = true;
+  bool _cargandoMas = false;
   List<Map<String, dynamic>> _reportes = [];
+  int _page = 1;
+  int _totalPages = 1;
+  final String _base = '${dotenv.env['API_BASE_URL']}/api/reportes';
+  final ScrollController _scrollCtrl = ScrollController();
 
   static const _coloresTipo = {
     'atraco': AppColors.hurtoAtraco,
@@ -159,25 +164,80 @@ class _MisReportesPageState extends State<MisReportesPage> {
     'eliminado': Color(0xFFDC2626),
   };
 
+  static const int _limit = 8;
+
   @override
   void initState() {
     super.initState();
-    _cargar();
+    _cargar(reset: true);
+    // Sin listener manual — usa NotificationListener en el build
   }
 
-  Future<void> _cargar() async {
-    setState(() => _cargando = true);
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<Map<String, String>> get _headers async {
+    final token = await AuthStorage.getToken();
+    return {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'};
+  }
+
+  Future<void> _cargar({bool reset = false}) async {
+    if (reset) {
+      setState(() { _cargando = true; _page = 1; _reportes = []; });
+    }
     try {
-      final data = await widget.datasource.obtenerMisReportes();
-      if (!mounted) return;
-      setState(() {
-        _reportes = data;
-        _cargando = false;
-      });
+      final url = Uri.parse('$_base/mis-reportes').replace(
+        queryParameters: {'page': '1', 'limit': '$_limit'},
+      );
+      debugPrint('[MisReportes] GET $url');
+      final res = await http.get(url, headers: await _headers);
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        debugPrint('[MisReportes] total=${body['total']} totalPages=${body['totalPages']} recibidos=${(body['data'] as List?)?.length}');
+        if (!mounted) return;
+        setState(() {
+          _reportes   = List<Map<String, dynamic>>.from(body['data'] ?? []);
+          _page       = 1;
+          _totalPages = body['totalPages'] ?? 1;
+          _cargando   = false;
+        });
+      } else {
+        debugPrint('[MisReportes] Error HTTP ${res.statusCode}: ${res.body}');
+        throw Exception('Error ${res.statusCode}');
+      }
     } catch (e) {
-      debugPrint('Error cargando mis reportes: $e');
+      debugPrint('[MisReportes] Excepción: $e');
       if (!mounted) return;
       setState(() => _cargando = false);
+    }
+  }
+
+  Future<void> _cargarMas() async {
+    if (_cargandoMas || _page >= _totalPages) return;
+    setState(() => _cargandoMas = true);
+    try {
+      final nextPage = _page + 1;
+      final url = Uri.parse('$_base/mis-reportes').replace(
+        queryParameters: {'page': '$nextPage', 'limit': '$_limit'},
+      );
+      debugPrint('[MisReportes] cargarMas GET $url');
+      final res = await http.get(url, headers: await _headers);
+      if (res.statusCode == 200 && mounted) {
+        final body = jsonDecode(res.body);
+        debugPrint('[MisReportes] cargarMas recibidos=${(body['data'] as List?)?.length}');
+        setState(() {
+          _reportes.addAll(List<Map<String, dynamic>>.from(body['data'] ?? []));
+          _page       = nextPage;
+          _totalPages = body['totalPages'] ?? _totalPages;
+        });
+      }
+    } catch (e) {
+      debugPrint('[MisReportes] cargarMas excepción: $e');
+    } finally {
+      if (mounted) setState(() => _cargandoMas = false);
     }
   }
 
@@ -212,18 +272,12 @@ class _MisReportesPageState extends State<MisReportesPage> {
   }
 
   void _editarReporte(Map<String, dynamic> r) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => EditarReportePage(
-          reporte: r,
-          datasource: widget.datasource,
-          onGuardado: () {
-            _cargar();
-            _mostrarMensaje('Reporte actualizado');
-          },
-          onError: (msg) => _mostrarMensaje(msg, error: true),
-        ),
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => _EditarReportePage(
+        reporte: r,
+        baseUrl: _base,
+        onGuardado: () { _cargar(reset: true); _mostrarMensaje('Reporte actualizado'); },
+        onError: (msg) => _mostrarMensaje(msg, error: true),
       ),
     );
   }
@@ -365,86 +419,32 @@ class _MisReportesPageState extends State<MisReportesPage> {
     final textS = isDark ? const Color(0xFF94A3B8) : AppColors.textSub;
     final sheetBg = isDark ? const Color(0xFF1E293B) : Colors.white;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: sheetBg,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.4,
-          maxChildSize: 0.9,
-          expand: false,
-          builder: (_, sc) {
-            return ListView(
-              controller: sc,
-              padding: const EdgeInsets.all(20),
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Detalle del reporte',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: textM,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _detRow('Tipo', _capitalizar(r['tipo_hurto'] as String?), textM, textS),
-                _detRow('Estado', r['estado'] ?? '—', textM, textS),
-                _detRow('Fecha', _fmtFecha(r['fecha_incidente'] as String?), textM, textS),
-                _detRow('Franja', r['franja_horaria'] ?? '—', textM, textS),
-                _detRow('Barrio', r['barrio_ingresado'] ?? '—', textM, textS),
-                _detRow(
-                  'Comuna',
-                  r['comuna'] != null ? 'Comuna ${r['comuna']}' : '—',
-                  textM,
-                  textS,
-                ),
-                _detRow('Objeto hurtado', r['objeto_hurtado'] ?? '—', textM, textS),
-                _detRow(
-                  'N° agresores',
-                  '${r['numero_agresores'] ?? '—'}',
-                  textM,
-                  textS,
-                ),
-                if (r['descripcion'] != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'Descripción',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: textM,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    r['descripcion'],
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      color: textS,
-                      height: 1.5,
-                    ),
-                  ),
-                ],
-              ],
-            );
-          },
-        );
-      },
-    );
+    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: sheetBg, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))), builder: (ctx) {
+      return DraggableScrollableSheet(initialChildSize: 0.7, minChildSize: 0.4, maxChildSize: 0.9, expand: false, builder: (_, sc) {
+        return ListView(controller: sc, padding: const EdgeInsets.all(20), children: [
+          Row(children: [
+            Text('Detalle del reporte', style: GoogleFonts.montserrat(fontSize: 18, fontWeight: FontWeight.bold, color: textM)),
+            const Spacer(),
+            IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+          ]),
+          const SizedBox(height: 16),
+          _detRow('Tipo', r['tipo_hurto'] != null ? '${(r['tipo_hurto'] as String)[0].toUpperCase()}${(r['tipo_hurto'] as String).substring(1)}' : 'No registra', textM, textS),
+          _detRow('Estado', r['estado'] ?? 'No registra', textM, textS),
+          _detRow('Fecha', _fmtFecha(r['fecha_incidente'] as String?), textM, textS),
+          _detRow('Franja', r['franja_horaria'] ?? 'No registra', textM, textS),
+          _detRow('Barrio', r['barrio_ingresado'] ?? 'No registra', textM, textS),
+          _detRow('Comuna', r['comuna'] != null ? 'Comuna ${r['comuna']}' : 'No registra', textM, textS),
+          _detRow('Objeto hurtado', r['objeto_hurtado'] ?? 'No registra', textM, textS),
+          _detRow('N° agresores', r['numero_agresores'] ?? 'No registra', textM, textS),
+          if (r['descripcion'] != null) ...[
+            const SizedBox(height: 12),
+            Text('Descripción', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: textM)),
+            const SizedBox(height: 4),
+            Text(r['descripcion'], style: GoogleFonts.inter(fontSize: 13, color: textS, height: 1.5)),
+          ],
+        ]);
+      });
+    });
   }
 
   Widget _detRow(String label, String value, Color textM, Color textS) {
@@ -490,16 +490,30 @@ class _MisReportesPageState extends State<MisReportesPage> {
           : _reportes.isEmpty
               ? _emptyState(textMain, textSub)
               : RefreshIndicator(
-                  onRefresh: _cargar,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _reportes.length,
-                    itemBuilder: (_, i) => _reporteCard(
-                      _reportes[i],
-                      cardColor,
-                      textMain,
-                      textSub,
-                      borderColor,
+                  onRefresh: () => _cargar(reset: true),
+                  child: NotificationListener<ScrollEndNotification>(
+                    onNotification: (notification) {
+                      if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 120 &&
+                          !_cargandoMas &&
+                          _page < _totalPages) {
+                        _cargarMas();
+                      }
+                      return false;
+                    },
+                    child: ListView.builder(
+                      controller: _scrollCtrl,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom + 24),
+                      itemCount: _reportes.length + (_cargandoMas || _page < _totalPages ? 1 : 0),
+                      itemBuilder: (_, i) {
+                        if (i == _reportes.length) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        return _reporteCard(_reportes[i], cardColor, textMain, textSub, borderColor);
+                      },
                     ),
                   ),
                 ),
@@ -575,23 +589,34 @@ class _MisReportesPageState extends State<MisReportesPage> {
                 bottom: BorderSide(color: border, width: 0.5),
               ),
             ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: tipoColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    tipo.isNotEmpty ? _capitalizar(tipo) : '',
-                    style: GoogleFonts.montserrat(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: tipoColor,
-                    ),
-                  ),
-                ),
+            const Spacer(),
+            Text(_fmtFecha(r['fecha_incidente'] as String?), style: GoogleFonts.inter(fontSize: 12, color: textS, fontWeight: FontWeight.w300)),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Icon(Icons.location_on_outlined, size: 16, color: textS),
+              const SizedBox(width: 6),
+              Expanded(child: Text('${r['barrio_ingresado'] ?? '—'}${r['comuna'] != null ? ' · Comuna ${r['comuna']}' : ''}', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500, color: textM))),
+            ]),
+            const SizedBox(height: 6),
+            Row(children: [
+              Icon(Icons.access_time, size: 16, color: textS),
+              const SizedBox(width: 6),
+              Text(r['franja_horaria'] ?? 'No registra', style: GoogleFonts.inter(fontSize: 12, color: textS)),
+            ]),
+            if (r['descripcion'] != null && (r['descripcion'] as String).isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(r['descripcion'], style: GoogleFonts.inter(fontSize: 12, color: textS, fontWeight: FontWeight.w300), maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
+            const SizedBox(height: 12),
+            Row(children: [
+              _actionBtn(Icons.visibility_outlined, 'Ver', AppColors.primary, () => _verDetalle(r)),
+              if (estado == 'activo') ...[
+                const SizedBox(width: 8),
+                _actionBtn(Icons.edit_outlined, 'Editar', const Color(0xFFD97706), () => _editarReporte(r)),
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

@@ -59,6 +59,17 @@ class ReportController {
   /** GET /api/reportes/mapa */
   async getForMap(req, res) {
     try {
+      const { lat, lng, radio } = req.query;
+
+      // Si vienen coordenadas, filtrar por radio (en metros, default 500)
+      if (lat && lng) {
+        const latF   = parseFloat(lat);
+        const lngF   = parseFloat(lng);
+        const radioM = parseFloat(radio) || 500;
+        const result = await this.repository.findForMapByRadius(latF, lngF, radioM);
+        return res.status(200).json({ success: true, data: result });
+      }
+
       const result = await this.GetMapReportsUC.execute();
       return res.status(200).json({ success: true, data: result });
     } catch (error) {
@@ -275,11 +286,19 @@ class ReportController {
     }
   }
 
-  /** GET /api/reportes/mis-reportes — reportes del usuario autenticado */
+  /** GET /api/reportes/mis-reportes — reportes del usuario autenticado (paginado) */
   async getMisReportes(req, res) {
     try {
-      const result = await this.repository.findByUsuario(req.user.id);
-      return res.status(200).json({ success: true, data: result });
+      const page  = Math.max(1, parseInt(req.query.page)  || 1);
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
+      const result = await this.repository.findByUsuario(req.user.id, page, limit);
+      return res.status(200).json({
+        success: true,
+        data:       result.data,
+        total:      result.total,
+        page:       result.page,
+        totalPages: result.totalPages,
+      });
     } catch (error) {
       return res.status(500).json({ success: false, message: error.message });
     }

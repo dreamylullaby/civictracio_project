@@ -1,10 +1,11 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../../core/app_theme.dart';
 import '../../../../../core/app_dialog.dart';
 import '../widgets/input_Field.dart';
@@ -84,31 +85,45 @@ class _LoginPageState extends State<LoginPage> {
           return; // El usuario canceló
         }
 
-        // Verificar si ya aceptó T&C antes (por email)
-        final prefs = await SharedPreferences.getInstance();
-        final yaAcepto = prefs.getBool('tc_accepted_${googleUser.email}') ?? false;
-
-        if (!yaAcepto) {
-          // Mostrar diálogo de T&C
-          setState(() => isLoading = false);
-          final acepta = await _mostrarDialogoTerminos();
-          if (acepta != true) return;
-          setState(() => isLoading = true);
-          // Guardar que aceptó
-          await prefs.setBool('tc_accepted_${googleUser.email}', true);
-        }
-
+        // Verificar si el usuario existe en el backend ANTES de mostrar T&C
+        // Hacemos un pre-check con el idToken para saber si es usuario nuevo
         final googleAuth = await googleUser.authentication;
         final credential = GoogleAuthProvider.credential(
           accessToken: googleAuth.accessToken,
           idToken: googleAuth.idToken,
         );
-        userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+        final tempCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+        final idToken = await tempCredential.user!.getIdToken();
+
+        final datasource = UserRemoteDatasource();
+        final esNuevo = await datasource.verificarUsuarioGoogleNuevo(idToken: idToken!);
+
+        if (esNuevo) {
+          // Usuario nuevo → mostrar T&C obligatorio
+          setState(() => isLoading = false);
+          final acepta = await _mostrarDialogoTerminos();
+          if (acepta != true) {
+            // Canceló → cerrar sesión de Firebase y salir
+            await FirebaseAuth.instance.signOut();
+            return;
+          }
+          setState(() => isLoading = true);
+        }
+
+        // Refrescar idToken por si el usuario tardó leyendo el T&C
+        final idTokenFinal = await tempCredential.user!.getIdToken(true) ?? idToken;
+
+        userCredential = tempCredential;
+        await datasource.loginWithGoogle(idToken: idTokenFinal);
+        datasource.registrarFcmToken();
+
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, '/home');
+        return;
       }
 
       final idToken = await userCredential.user!.getIdToken();
       final datasource = UserRemoteDatasource();
-
       await datasource.loginWithGoogle(idToken: idToken!);
       datasource.registrarFcmToken();
 
@@ -208,6 +223,10 @@ class _LoginPageState extends State<LoginPage> {
     final bgColor = isDark ? const Color(0xFF1E293B) : Colors.white;
     final textColor = isDark ? const Color(0xFFE2E8F0) : AppColors.textMain;
 
+    final asset = titulo == 'Términos y Condiciones'
+        ? 'assets/T&C_CivicTrackIO.md'
+        : 'assets/Politica_De_Privacidad_CivicTrackIO.md';
+
     showDialog(
       context: parentCtx,
       builder: (ctx) => Dialog(
@@ -224,16 +243,28 @@ class _LoginPageState extends State<LoginPage> {
           ),
           Divider(height: 1, color: isDark ? const Color(0xFF475569) : AppColors.border),
           Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Text(
-                'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.\n\n'
-                'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.\n\n'
-                'Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.\n\n'
-                'Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit.\n\n'
-                'At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores et quas molestias excepturi sint occaecati cupiditate non provident, similique sunt in culpa qui officia deserunt mollitia animi, id est laborum et dolorum fuga.',
-                style: GoogleFonts.inter(fontSize: 14, color: textColor, height: 1.6),
-              ),
+            child: FutureBuilder<String>(
+              future: rootBundle.loadString(asset),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.all(40),
+                    child: CircularProgressIndicator(),
+                  );
+                }
+                final texto = snapshot.data ?? 'No se pudo cargar el contenido.';
+                return Markdown(
+                  data: texto,
+                  shrinkWrap: true,
+                  styleSheet: MarkdownStyleSheet(
+                    h1: GoogleFonts.montserrat(fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
+                    h2: GoogleFonts.montserrat(fontSize: 14, fontWeight: FontWeight.bold, color: textColor),
+                    p: GoogleFonts.inter(fontSize: 13, color: textColor, height: 1.6),
+                    listBullet: GoogleFonts.inter(fontSize: 13, color: textColor),
+                    strong: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: textColor),
+                  ),
+                );
+              },
             ),
           ),
           const SizedBox(height: 16),

@@ -1,5 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../../core/app_theme.dart';
 import '../../../../../core/app_dialog.dart';
@@ -295,35 +297,48 @@ class _RegisterPageState extends State<RegisterPage> {
     final bgColor = isDark ? const Color(0xFF1E293B) : Colors.white;
     final textColor = isDark ? const Color(0xFFE2E8F0) : AppColors.textMain;
 
+    final asset = titulo == 'Términos y Condiciones'
+        ? 'assets/T&C_CivicTrackIO.md'
+        : 'assets/Politica_De_Privacidad_CivicTrackIO.md';
+
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: bgColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      titulo,
-                      style: GoogleFonts.montserrat(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                        color: textColor,
-                      ),
-                    ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
+            child: Row(children: [
+              Expanded(child: Text(titulo, style: GoogleFonts.montserrat(fontSize: 17, fontWeight: FontWeight.bold, color: textColor))),
+              IconButton(icon: Icon(Icons.close, color: textColor), onPressed: () => Navigator.pop(ctx)),
+            ]),
+          ),
+          Divider(height: 1, color: isDark ? const Color(0xFF475569) : AppColors.border),
+          Flexible(
+            child: FutureBuilder<String>(
+              future: rootBundle.loadString(asset),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.all(40),
+                    child: CircularProgressIndicator(),
+                  );
+                }
+                final texto = snapshot.data ?? 'No se pudo cargar el contenido.';
+                return Markdown(
+                  data: texto,
+                  shrinkWrap: true,
+                  styleSheet: MarkdownStyleSheet(
+                    h1: GoogleFonts.montserrat(fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
+                    h2: GoogleFonts.montserrat(fontSize: 14, fontWeight: FontWeight.bold, color: textColor),
+                    p: GoogleFonts.inter(fontSize: 13, color: textColor, height: 1.6),
+                    listBullet: GoogleFonts.inter(fontSize: 13, color: textColor),
+                    strong: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: textColor),
                   ),
-                  IconButton(
-                    icon: Icon(Icons.close, color: textColor),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
             Divider(
               height: 1,

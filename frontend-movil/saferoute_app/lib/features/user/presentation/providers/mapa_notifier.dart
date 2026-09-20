@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 import '../../data/datasources/reporte_mapa_datasource.dart';
@@ -15,11 +16,16 @@ class MapaNotifier extends ChangeNotifier {
   final ReporteMapaDatasource _datasource;
   Timer? _timer;
 
+  /// Radio de visibilidad de marcadores en metros.
+  static const double radioVisibilidadMetros = 500.0;
+
   List<ReporteMapaModel> _todos = [];
   List<ReporteMapaModel> _filtrados = [];
+  List<ReporteMapaModel> _filtradosFull = []; // resultado de filtros sin recorte de radio
   bool _cargando = true;
   bool _modoCalor = false;
   String _ultimaActualizacion = DateTime.now().toUtc().toIso8601String();
+  LatLng? _ubicacionUsuario;
 
   final Set<int>    comunasSeleccionadas       = {};
   final Set<int>    corregimientosSeleccionados = {};
@@ -35,6 +41,54 @@ class MapaNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Actualiza la ubicación del usuario y recorta los marcadores visibles a
+  /// [radioVisibilidadMetros] metros. Se llama desde la página cada vez que
+  /// el GPS emite una nueva posición.
+  void setUbicacionUsuario(LatLng ubicacion) {
+    _ubicacionUsuario = ubicacion;
+    _aplicarRadioVisibilidad();
+  }
+
+  /// Devuelve la distancia en metros entre dos coordenadas (Haversine).
+  static double _distanciaMetros(LatLng a, LatLng b) {
+    const r = 6371000.0; // radio Tierra en metros
+    final lat1 = a.latitude  * math.pi / 180;
+    final lat2 = b.latitude  * math.pi / 180;
+    final dLat = (b.latitude  - a.latitude)  * math.pi / 180;
+    final dLon = (b.longitude - a.longitude) * math.pi / 180;
+    final x = math.sin(dLat / 2) * math.sin(dLat / 2) +
+              math.cos(lat1) * math.cos(lat2) *
+              math.sin(dLon / 2) * math.sin(dLon / 2);
+    return r * 2 * math.atan2(math.sqrt(x), math.sqrt(1 - x));
+  }
+
+  /// Filtra [_filtradosFull] aplicando la regla de visibilidad por distancia.
+  /// Reglas:
+  /// - Si hay filtros activos (usuario buscando historial): sin restricción de distancia.
+  /// - Sin filtros, incidentes 2025 o anteriores: solo ≤500m del usuario.
+  /// - Sin filtros, incidentes 2026 en adelante: sin restricción de distancia.
+  /// - Sin ubicación disponible: se muestran todos.
+  void _aplicarRadioVisibilidad() {
+    final loc = _ubicacionUsuario;
+    if (loc == null || hayFiltros) {
+      // Sin GPS o con filtros activos → mostrar todo sin restricción de distancia
+      _filtrados = List.from(_filtradosFull);
+    } else {
+      _filtrados = _filtradosFull.where((r) {
+        final fecha = DateTime.tryParse(r.fechaIncidente);
+        final anio = fecha?.year ?? 2026;
+
+        // 2026 en adelante → sin restricción de distancia
+        if (anio >= 2026) return true;
+
+        // 2025 o anterior → respetar radio de 500m
+        return _distanciaMetros(loc, LatLng(r.latitud, r.longitud)) <=
+               radioVisibilidadMetros;
+      }).toList();
+    }
+    notifyListeners();
+  }
+
   // Stream para navegación del mapa (el widget escucha y ejecuta mapController.move)
   final _navegacionController = StreamController<LatLng>.broadcast();
   Stream<LatLng> get navegacionStream => _navegacionController.stream;
@@ -46,6 +100,8 @@ class MapaNotifier extends ChangeNotifier {
   List<ReporteMapaModel> get filtrados => _filtrados;
   bool get cargando => _cargando;
   bool get modoCalor => _modoCalor;
+  int get totalReportesEnBD => _filtradosFull.length;
+  bool get ubicacionActiva => _ubicacionUsuario != null;
 
   bool get hayFiltros =>
       comunasSeleccionadas.isNotEmpty || corregimientosSeleccionados.isNotEmpty ||
@@ -67,8 +123,10 @@ class MapaNotifier extends ChangeNotifier {
       _todos = data;
       _cargando = false;
       _ultimaActualizacion = DateTime.now().toUtc().toIso8601String();
-      aplicarFiltros();
-    } catch (_) {
+      _filtradosFull = List.from(_todos);
+      _aplicarRadioVisibilidad();
+    } catch (e) {
+      debugPrint('[MapaNotifier] Error al cargar reportes: $e');
       _cargando = false;
       notifyListeners();
     }
@@ -90,8 +148,8 @@ class MapaNotifier extends ChangeNotifier {
 
   void aplicarFiltros() {
     if (!hayFiltros) {
-      _filtrados = List.from(_todos);
-      notifyListeners();
+      _filtradosFull = List.from(_todos);
+      _aplicarRadioVisibilidad();
       return;
     }
     _aplicarFiltrosBackend();
@@ -110,11 +168,11 @@ class MapaNotifier extends ChangeNotifier {
         fechaHasta: fechaHasta,
         zonaTipo: _modoRural ? 'rural' : (comunasSeleccionadas.isNotEmpty ? 'urbana' : null),
       );
-      _filtrados = resultado;
+      _filtradosFull = resultado;
       _cargando = false;
-      notifyListeners();
+      _aplicarRadioVisibilidad();
     } catch (_) {
-      _filtrados = _todos.where((r) {
+      _filtradosFull = _todos.where((r) {
         if (comunasSeleccionadas.isNotEmpty && !comunasSeleccionadas.contains(r.comuna)) return false;
         if (franjasSeleccionadas.isNotEmpty && !franjasSeleccionadas.contains(r.franjaHoraria)) return false;
         if (tiposSeleccionados.isNotEmpty && !tiposSeleccionados.contains(r.tipoHurto)) return false;
@@ -129,7 +187,7 @@ class MapaNotifier extends ChangeNotifier {
         return true;
       }).toList();
       _cargando = false;
-      notifyListeners();
+      _aplicarRadioVisibilidad();
     }
   }
 
@@ -141,8 +199,8 @@ class MapaNotifier extends ChangeNotifier {
     fechaDesde = null;
     fechaHasta = null;
     _modoRural = false;
-    _filtrados = List.from(_todos);
-    notifyListeners();
+    _filtradosFull = List.from(_todos);
+    _aplicarRadioVisibilidad();
   }
 
   List<HeatmapPoint> buildHeatmapPoints() {
