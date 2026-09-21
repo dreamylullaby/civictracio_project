@@ -209,6 +209,45 @@ export default class ReportRepositoryImpl extends ReportRepository {
   }
 
   /**
+   * Obtiene reportes activos del año actual dentro de un radio dado (Haversine en JS).
+   * Usado por GET /api/reportes/mapa?lat=X&lng=Y&radio=N
+   * @param {number} latitud  - Latitud del centro
+   * @param {number} longitud - Longitud del centro
+   * @param {number} radioMetros - Radio de búsqueda en metros (default 500)
+   * @returns {Promise<Array>} Reportes dentro del radio, ordenados por distancia
+   */
+  async findForMapByRadius(latitud, longitud, radioMetros = 500) {
+    const anioActual = new Date().getFullYear();
+    const fechaDesdeAnio = `${anioActual}-01-01`;
+
+    const { data, error } = await supabase
+      .from('reportes')
+      .select('id, latitud, longitud, tipo_hurto, franja_horaria, fecha_incidente, barrio_ingresado, comuna')
+      .eq('estado', 'activo')
+      .gte('fecha_incidente', fechaDesdeAnio)
+      .not('latitud', 'is', null)
+      .not('longitud', 'is', null)
+      .limit(50000);
+
+    if (error) throw new Error(`Error al obtener reportes del mapa por radio: ${error.message}`);
+
+    const toRad = deg => deg * Math.PI / 180;
+    const R = 6371000;
+
+    return data
+      .map(r => {
+        const dLat = toRad(r.latitud  - latitud);
+        const dLon = toRad(r.longitud - longitud);
+        const a = Math.sin(dLat / 2) ** 2 +
+                  Math.cos(toRad(latitud)) * Math.cos(toRad(r.latitud)) *
+                  Math.sin(dLon / 2) ** 2;
+        return { ...r, distancia_metros: R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) };
+      })
+      .filter(r => r.distancia_metros <= radioMetros)
+      .sort((a, b) => a.distancia_metros - b.distancia_metros);
+  }
+
+  /**
    * Obtiene reportes activos creados después del timestamp indicado.
    * Usado para la actualización automática del mapa cada minuto.
    * @param {string} desde - ISO 8601 timestamp

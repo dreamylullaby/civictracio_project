@@ -1,5 +1,4 @@
-import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -41,7 +40,8 @@ class _RegisterPageState extends State<RegisterPage> {
   void register() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_aceptaTerminos) {
-      _mostrarError('Debes aceptar los Términos y Condiciones y la Política de Privacidad para registrarte.');
+      _mostrarError(
+          'Debes aceptar los Términos y Condiciones y la Política de Privacidad para registrarte.');
       return;
     }
     setState(() => isLoading = true);
@@ -56,7 +56,6 @@ class _RegisterPageState extends State<RegisterPage> {
             final datasource = UserRemoteDatasource();
             final repository = UserRepositoryImpl(datasource);
             final registerUsecase = RegisterUser(repository);
-
             return await registerUsecase(
               username: username,
               correo: correo,
@@ -80,9 +79,7 @@ class _RegisterPageState extends State<RegisterPage> {
       _mostrarError(e.toString().replaceAll('Exception: ', ''));
     }
 
-    if (mounted) {
-      setState(() => isLoading = false);
-    }
+    if (mounted) setState(() => isLoading = false);
   }
 
   @override
@@ -104,15 +101,14 @@ class _RegisterPageState extends State<RegisterPage> {
         child: Center(
           child: SingleChildScrollView(
             key: const Key('register_scroll'),
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
             child: Form(
               key: _formKey,
               child: Column(
                 children: [
-                  Image.asset(
-                    'assets/Logo_CivicTrackIO_Color.png',
-                    height: 80,
-                  ),
+                  Image.asset('assets/Logo_CivicTrackIO_Color.png',
+                      height: 80),
                   const SizedBox(height: 12),
                   Text(
                     'CivicTrackIO',
@@ -127,9 +123,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   Text(
                     'Crea tu cuenta',
                     style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: Colors.white70,
-                    ),
+                        fontSize: 14, color: Colors.white70),
                   ),
                   const SizedBox(height: 32),
                   Container(
@@ -154,9 +148,14 @@ class _RegisterPageState extends State<RegisterPage> {
                           extraValidator: (v) {
                             final value = v?.trim() ?? '';
                             if (value.isEmpty) return 'Campo obligatorio';
-                            if (value.length < 3) return 'El apodo debe tener mínimo 3 caracteres';
-                            if (value.length > 20) return 'El apodo debe tener máximo 20 caracteres';
-                            if (!RegExp(r'^[a-zA-Z0-9._]+$').hasMatch(value)) {
+                            if (value.length < 3) {
+                              return 'El apodo debe tener mínimo 3 caracteres';
+                            }
+                            if (value.length > 20) {
+                              return 'El apodo debe tener máximo 20 caracteres';
+                            }
+                            if (!RegExp(r'^[a-zA-Z0-9._]+$')
+                                .hasMatch(value)) {
                               return 'Solo se permiten letras, números, punto y guion bajo';
                             }
                             return null;
@@ -232,7 +231,8 @@ class _RegisterPageState extends State<RegisterPage> {
           child: Checkbox(
             key: const Key('chk_terminos'),
             value: _aceptaTerminos,
-            onChanged: (v) => setState(() => _aceptaTerminos = v ?? false),
+            onChanged: (v) =>
+                setState(() => _aceptaTerminos = v ?? false),
             activeColor: AppColors.primary,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(4),
@@ -246,14 +246,12 @@ class _RegisterPageState extends State<RegisterPage> {
               Text(
                 'Acepto los ',
                 style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: AppColors.textSub,
-                  height: 1.4,
-                ),
+                    fontSize: 12, color: AppColors.textSub, height: 1.4),
               ),
               GestureDetector(
                 key: const Key('link_terminos'),
-                onTap: () => _mostrarTextoLegal('Términos y Condiciones'),
+                onTap: () =>
+                    _mostrarTextoLegal('Términos y Condiciones'),
                 child: Text(
                   'Términos y Condiciones',
                   style: GoogleFonts.inter(
@@ -267,14 +265,12 @@ class _RegisterPageState extends State<RegisterPage> {
               Text(
                 ' y la ',
                 style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: AppColors.textSub,
-                  height: 1.4,
-                ),
+                    fontSize: 12, color: AppColors.textSub, height: 1.4),
               ),
               GestureDetector(
                 key: const Key('link_privacidad'),
-                onTap: () => _mostrarTextoLegal('Política de Privacidad'),
+                onTap: () =>
+                    _mostrarTextoLegal('Política de Privacidad'),
                 child: Text(
                   'Política de Privacidad',
                   style: GoogleFonts.inter(
@@ -295,7 +291,8 @@ class _RegisterPageState extends State<RegisterPage> {
   void _mostrarTextoLegal(String titulo) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final textColor = isDark ? const Color(0xFFE2E8F0) : AppColors.textMain;
+    final textColor =
+        isDark ? const Color(0xFFE2E8F0) : AppColors.textMain;
 
     final asset = titulo == 'Términos y Condiciones'
         ? 'assets/T&C_CivicTrackIO.md'
@@ -305,58 +302,75 @@ class _RegisterPageState extends State<RegisterPage> {
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: bgColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
-            child: Row(children: [
-              Expanded(child: Text(titulo, style: GoogleFonts.montserrat(fontSize: 17, fontWeight: FontWeight.bold, color: textColor))),
-              IconButton(icon: Icon(Icons.close, color: textColor), onPressed: () => Navigator.pop(ctx)),
-            ]),
-          ),
-          Divider(height: 1, color: isDark ? const Color(0xFF475569) : AppColors.border),
-          Flexible(
-            child: FutureBuilder<String>(
-              future: rootBundle.loadString(asset),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.all(40),
-                    child: CircularProgressIndicator(),
-                  );
-                }
-                final texto = snapshot.data ?? 'No se pudo cargar el contenido.';
-                return Markdown(
-                  data: texto,
-                  shrinkWrap: true,
-                  styleSheet: MarkdownStyleSheet(
-                    h1: GoogleFonts.montserrat(fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
-                    h2: GoogleFonts.montserrat(fontSize: 14, fontWeight: FontWeight.bold, color: textColor),
-                    p: GoogleFonts.inter(fontSize: 13, color: textColor, height: 1.6),
-                    listBullet: GoogleFonts.inter(fontSize: 13, color: textColor),
-                    strong: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: textColor),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
+        insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20, vertical: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
+              child: Row(children: [
+                Expanded(
+                  child: Text(
+                    titulo,
+                    style: GoogleFonts.montserrat(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: textColor),
                   ),
-                );
-              },
+                ),
+                IconButton(
+                  icon: Icon(Icons.close, color: textColor),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ]),
             ),
             Divider(
               height: 1,
-              color: isDark ? const Color(0xFF475569) : AppColors.border,
+              color: isDark
+                  ? const Color(0xFF475569)
+                  : AppColors.border,
             ),
             Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\n\n'
-                  'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.\n\n'
-                  'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.',
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: textColor,
-                    height: 1.6,
-                  ),
-                ),
+              child: FutureBuilder<String>(
+                future: rootBundle.loadString(asset),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState ==
+                      ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+                  final texto = snapshot.data ??
+                      'No se pudo cargar el contenido.';
+                  return Markdown(
+                    data: texto,
+                    shrinkWrap: true,
+                    styleSheet: MarkdownStyleSheet(
+                      h1: GoogleFonts.montserrat(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: textColor),
+                      h2: GoogleFonts.montserrat(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: textColor),
+                      p: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: textColor,
+                          height: 1.6),
+                      listBullet: GoogleFonts.inter(
+                          fontSize: 13, color: textColor),
+                      strong: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: textColor),
+                    ),
+                  );
+                },
               ),
             ),
             const SizedBox(height: 16),
