@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -286,26 +287,87 @@ class _MapaPageState extends State<MapaPage> with WidgetsBindingObserver {
                                 radius: 35, maxOpacity: 0.55, blur: 20,
                               ),
                             if (!notifier.modoCalor)
-                              MarkerLayer(
-                                markers: notifier.filtrados.map((r) => Marker(
-                                  point: LatLng(r.latitud, r.longitud),
-                                  width: 36, height: 36,
-                                  child: GestureDetector(
-                                    onTap: () => ReporteDetailSheet.show(context, r),
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: _colorTipo(r.tipoHurto),
-                                        shape: BoxShape.circle,
-                                        boxShadow: [BoxShadow(
-                                            color: Colors.black26,
-                                            blurRadius: 4,
-                                            offset: const Offset(0, 2))],
+                              MarkerClusterLayerWidget(
+                                options: MarkerClusterLayerOptions(
+                                  maxClusterRadius: 60,
+                                  disableClusteringAtZoom: 16,
+                                  markers: notifier.filtrados.map((r) => Marker(
+                                    point: LatLng(r.latitud, r.longitud),
+                                    width: 36, height: 36,
+                                    child: GestureDetector(
+                                      onTap: () => ReporteDetailSheet.show(context, r),
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: _colorTipo(r.tipoHurto),
+                                          shape: BoxShape.circle,
+                                          boxShadow: [BoxShadow(
+                                              color: Colors.black26,
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 2))],
+                                        ),
+                                        child: Icon(_iconoTipo(r.tipoHurto),
+                                            color: Colors.white, size: 20),
                                       ),
-                                      child: Icon(_iconoTipo(r.tipoHurto),
-                                          color: Colors.white, size: 20),
                                     ),
-                                  ),
-                                )).toList(),
+                                  )).toList(),
+                                  builder: (context, markers) {
+                                    final n = markers.length;
+                                    // Color y tamaño por densidad — misma lógica que el heatmap
+                                    final Color color;
+                                    final double size;
+                                    final double fontSize;
+                                    if (n <= 10) {
+                                      color = const Color(0xFF3B82F6); // azul
+                                      size = 52;
+                                      fontSize = 14;
+                                    } else if (n <= 50) {
+                                      color = const Color(0xFFF97316); // naranja
+                                      size = 62;
+                                      fontSize = 15;
+                                    } else if (n <= 200) {
+                                      color = const Color(0xFFEF4444); // rojo
+                                      size = 72;
+                                      fontSize = 16;
+                                    } else {
+                                      color = const Color(0xFF991B1B); // rojo oscuro
+                                      size = 80;
+                                      fontSize = 17;
+                                    }
+                                    final label = n > 999 ? '999+' : '$n';
+                                    return Container(
+                                      width: size,
+                                      height: size,
+                                      decoration: BoxDecoration(
+                                        color: color,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: color.withOpacity(0.45),
+                                            blurRadius: 10,
+                                            spreadRadius: 2,
+                                            offset: const Offset(0, 3),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          label,
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: fontSize,
+                                            shadows: const [
+                                              Shadow(
+                                                color: Colors.black26,
+                                                blurRadius: 4,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
                               ),
                             // Indicador de ubicación del usuario (siempre encima)
                             if (_userLocation != null)

@@ -205,24 +205,46 @@ class MapaNotifier extends ChangeNotifier {
 
   List<HeatmapPoint> buildHeatmapPoints() {
     if (_filtrados.isEmpty) return [];
-    // Radio de ~180m en grados (aprox)
-    const radio = 0.0016;
+
+    // O(n) grid bucketing en vez de O(n²) comparación por pares.
+    // Cada celda equivale a ~180m (igual que antes, solo más rápido).
+    const double cellSize = 0.0016;
+
+    // Paso 1: asignar cada punto a una celda del grid
+    final Map<String, List<ReporteMapaModel>> grid = {};
+    for (final r in _filtrados) {
+      final int cx = (r.latitud  / cellSize).floor();
+      final int cy = (r.longitud / cellSize).floor();
+      final String key = '$cx,$cy';
+      grid.putIfAbsent(key, () => []).add(r);
+    }
+
+    // Paso 2: para cada punto, sumar los puntos de las 9 celdas vecinas (incluida la propia)
     return _filtrados.map((r) {
-      // Contar reportes cercanos (excluyéndose a sí mismo)
-      final cercanos = _filtrados.where((o) =>
-          o.id != r.id &&
-          (o.latitud - r.latitud).abs() < radio &&
-          (o.longitud - r.longitud).abs() < radio).length;
-      // Escala absoluta: 0-2 seguro, 3-6 bajo, 7-10 medio, >10 alto
+      final int cx = (r.latitud  / cellSize).floor();
+      final int cy = (r.longitud / cellSize).floor();
+
+      int cercanos = 0;
+      for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+          final String nKey = '${cx + dx},${cy + dy}';
+          final neighbors = grid[nKey];
+          if (neighbors != null) cercanos += neighbors.length;
+        }
+      }
+      // Restar el punto mismo (siempre se contó a sí mismo)
+      cercanos -= 1;
+
+      // Mismos umbrales de intensidad que antes
       final double intensity;
       if (cercanos <= 2) {
-        intensity = 0.15; // seguro
+        intensity = 0.15;
       } else if (cercanos <= 6) {
-        intensity = 0.35; // bajo riesgo
+        intensity = 0.35;
       } else if (cercanos <= 10) {
-        intensity = 0.65; // riesgo medio
+        intensity = 0.65;
       } else {
-        intensity = 1.0;  // alto riesgo
+        intensity = 1.0;
       }
       return HeatmapPoint(LatLng(r.latitud, r.longitud), intensity);
     }).toList();
