@@ -79,7 +79,7 @@ class _GuiaInformativaDialogState extends State<GuiaInformativaDialog> {
                 icon: Icons.bubble_chart_outlined,
                 titulo: '¿Qué significan los círculos con números?',
                 descripcion:
-                    'Representan la cantidad total de hurtos acumulados en ese sector. Al hacer zoom en el mapa, el círculo se divide y revela los puntos específicos.',
+                    'Representan un conjunto de incidentes agrupados por cercanía. Al hacer zoom, el grupo se desagrega y podrás ver cada caso por separado.',
                 textColor: textColor,
                 subColor: subColor,
               ),
