@@ -16,11 +16,11 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() {
-  dotenv.loadFromString(envString: '''
+    dotenv.loadFromString(envString: '''
 API_BASE_URL=http://localhost:3000
-MAPBOX_TOKEN=test-token
+MAPBOX_TOKEN=test-mapbox-token
 ''');
-});
+  });
 
   Future<void> mountApp(WidgetTester tester) async {
     await tester.pumpWidget(

@@ -23,6 +23,8 @@ import '../widgets/reporte_detail_sheet.dart';
 import '../widgets/filter_drawer.dart';
 import '../widgets/heatmap_layer.dart';
 import '../widgets/permission_modal.dart';
+import '../widgets/guia_informativa_dialog.dart';
+import '../../../../../core/onboarding_prefs.dart';
 
 /// Mapa interactivo de incidentes de hurto.
 class MapaPage extends StatefulWidget {
@@ -88,6 +90,20 @@ class _MapaPageState extends State<MapaPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) PermissionModals.mostrarSiNecesario(context);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final uid = await AuthStorage.getUserId()
+          ?? FirebaseAuth.instance.currentUser?.uid;
+      final seen = await OnboardingPrefs.hasSeen(uid);
+      if (!mounted) return;
+      if (!seen) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => GuiaInformativaDialog(userId: uid),
+        );
+      }
     });
   }
 

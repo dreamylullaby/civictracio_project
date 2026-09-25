@@ -37,14 +37,10 @@ void main() {
       'auth_token': 'fake-token',
       'user_id': 'user-123',
     });
-    await dotenv.load(
-      fileName: '.env',
-      isOptional: true,
-      mergeWith: {
-        'API_BASE_URL': 'http://localhost:3000',
-        'MAPBOX_TOKEN': 'test-token',
-      },
-    );
+    dotenv.loadFromString(envString: '''
+API_BASE_URL=http://localhost:3000
+MAPBOX_TOKEN=test-mapbox-token
+''');
   });
 
   // CP-HU01-F-01

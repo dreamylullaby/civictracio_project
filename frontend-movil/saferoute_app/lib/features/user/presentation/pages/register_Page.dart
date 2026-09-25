@@ -9,15 +9,19 @@ import '../widgets/submit_Button.dart';
 import '../../data/datasources/user_Remote_Datasource.dart';
 import '../../data/repositories/user_repository.impl.dart';
 import '../../domain/usecases/register_User.dart';
+import '../../domain/entities/user_Entity.dart';
 
+/// Pantalla de registro de nuevo usuario.
+/// Valida username, correo, contraseña y confirmación antes de enviar.
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key, this.onRegister});
-
-  final Future<dynamic> Function({
+  /// Inyección opcional de la función de registro (útil en tests).
+  final Future<UserEntity> Function({
     required String username,
     required String correo,
     required String password,
   })? onRegister;
+
+  const RegisterPage({super.key, this.onRegister});
 
   @override
   State<RegisterPage> createState() => _RegisterPageState();
@@ -101,15 +105,14 @@ class _RegisterPageState extends State<RegisterPage> {
         child: Center(
           child: SingleChildScrollView(
             key: const Key('register_scroll'),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
             child: Form(
               key: _formKey,
               child: Column(
                 children: [
                   Image.asset('assets/Logo_CivicTrackIO_Color.png',
-                      height: 80),
-                  const SizedBox(height: 12),
+                      height: 60),
+                  const SizedBox(height: 8),
                   Text(
                     'CivicTrackIO',
                     style: GoogleFonts.montserrat(
@@ -119,21 +122,21 @@ class _RegisterPageState extends State<RegisterPage> {
                       letterSpacing: 2,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   Text(
                     'Crea tu cuenta',
                     style: GoogleFonts.inter(
                         fontSize: 14, color: Colors.white70),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 16),
                   Container(
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       color: AppColors.surface,
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.07),
+                          color: Colors.black.withValues(alpha: 0.07),
                           blurRadius: 20,
                           offset: const Offset(0, 4),
                         ),
@@ -149,10 +152,10 @@ class _RegisterPageState extends State<RegisterPage> {
                             final value = v?.trim() ?? '';
                             if (value.isEmpty) return 'Campo obligatorio';
                             if (value.length < 3) {
-                              return 'El apodo debe tener mínimo 3 caracteres';
+                              return 'Apodo debe tener mínimo 3 caracteres';
                             }
                             if (value.length > 20) {
-                              return 'El apodo debe tener máximo 20 caracteres';
+                              return 'Apodo debe tener máximo 20 caracteres';
                             }
                             if (!RegExp(r'^[a-zA-Z0-9._]+$')
                                 .hasMatch(value)) {
@@ -161,13 +164,13 @@ class _RegisterPageState extends State<RegisterPage> {
                             return null;
                           },
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         InputField(
                           controller: emailController,
                           label: 'Correo',
                           icon: Icons.email_outlined,
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         InputField(
                           controller: passwordController,
                           label: 'Contraseña',
@@ -175,7 +178,7 @@ class _RegisterPageState extends State<RegisterPage> {
                           isPassword: true,
                           isPasswordConfirm: true,
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         InputField(
                           controller: confirmController,
                           label: 'Confirmar contraseña',
@@ -188,9 +191,9 @@ class _RegisterPageState extends State<RegisterPage> {
                             return null;
                           },
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         _buildTerminosCheckbox(),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
                         SubmitButton(
                           key: const Key('btn_registrarse'),
                           text: 'Registrarse',
@@ -200,7 +203,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
                   TextButton(
                     onPressed: () =>
                         Navigator.pushReplacementNamed(context, '/login'),
@@ -229,14 +232,11 @@ class _RegisterPageState extends State<RegisterPage> {
           width: 24,
           height: 24,
           child: Checkbox(
-            key: const Key('chk_terminos'),
             value: _aceptaTerminos,
-            onChanged: (v) =>
-                setState(() => _aceptaTerminos = v ?? false),
+            onChanged: (v) => setState(() => _aceptaTerminos = v ?? false),
             activeColor: AppColors.primary,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(4),
-            ),
+                borderRadius: BorderRadius.circular(4)),
           ),
         ),
         const SizedBox(width: 8),
@@ -250,8 +250,7 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               GestureDetector(
                 key: const Key('link_terminos'),
-                onTap: () =>
-                    _mostrarTextoLegal('Términos y Condiciones'),
+                onTap: () => _mostrarTextoLegal('Términos y Condiciones'),
                 child: Text(
                   'Términos y Condiciones',
                   style: GoogleFonts.inter(
@@ -269,8 +268,7 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               GestureDetector(
                 key: const Key('link_privacidad'),
-                onTap: () =>
-                    _mostrarTextoLegal('Política de Privacidad'),
+                onTap: () => _mostrarTextoLegal('Política de Privacidad'),
                 child: Text(
                   'Política de Privacidad',
                   style: GoogleFonts.inter(
@@ -304,8 +302,8 @@ class _RegisterPageState extends State<RegisterPage> {
         backgroundColor: bgColor,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16)),
-        insetPadding: const EdgeInsets.symmetric(
-            horizontal: 20, vertical: 40),
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
